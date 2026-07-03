@@ -50,7 +50,8 @@ CN64System::CN64System(CPlugins * Plugins, uint32_t randomizer_seed, bool SavesR
     m_thread(nullptr),
     m_hPauseEvent(true),
     m_SyncSystem(SyncSystem),
-    m_Random(randomizer_seed)
+    m_Random(randomizer_seed),
+    m_IPC(m_MMU_VM)
 {
     WriteTrace(TraceN64System, TraceDebug, "Start");
     memset(m_LastSuccessSyncPC, 0, sizeof(m_LastSuccessSyncPC));
