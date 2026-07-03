@@ -143,6 +143,7 @@ private:
     static void Load32CartridgeDomain2Address2(void);
     static void Load32PifRam(void);
     static void Load32Rom(void);
+    static void Load32IPC(void);
 
     static void Write32RDRAMRegisters(void);
     static void Write32SPRegisters(void);
@@ -156,6 +157,7 @@ private:
     static void Write32CartridgeDomain2Address1(void);
     static void Write32CartridgeDomain2Address2(void);
     static void Write32PifRam(void);
+    static void Write32IPC(void);
 
 #if defined(__i386__) || defined(_M_IX86)
 

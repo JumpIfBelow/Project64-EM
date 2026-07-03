@@ -4,6 +4,7 @@
 #include <Common/SyncEvent.h>
 #include <Common/Thread.h>
 #include <Project64-core/Settings/N64SystemSettings.h>
+#include <Project64-core/N64System/IPC.h>
 #include <Project64-core/N64System/Profiling.h>
 #include <Project64-core/N64System/Recompiler/Recompiler.h>
 #include <Project64-core/N64System/Mips/Audio.h>
@@ -154,6 +155,7 @@ private:
     uint32_t        m_SyncCount;
     bool            m_SyncSystem;
     CRandom         m_Random;
+    CIPC            m_IPC;
 
     // When syncing cores this is the PC where it last synced correctly
     uint32_t m_LastSuccessSyncPC[10];

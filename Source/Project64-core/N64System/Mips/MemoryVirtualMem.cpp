@@ -703,6 +703,7 @@ bool CMipsMemoryVM::LW_NonMemory(uint32_t PAddr, uint32_t* Value)
         case 0x06000000: Load32CartridgeDomain1Address1(); break;
         case 0x08000000: Load32CartridgeDomain2Address2(); break;
         case 0x1FC00000: Load32PifRam(); break;
+        case 0x1FE00000: Load32IPC(); break;
         case 0x1FF00000: Load32CartridgeDomain1Address3(); break;
         default:
             m_MemLookupValue.UW[0] = PAddr & 0xFFFF;
@@ -866,6 +867,7 @@ bool CMipsMemoryVM::SW_NonMemory(uint32_t PAddr, uint32_t Value)
     case 0x05000000: Write32CartridgeDomain2Address1(); break;
     case 0x08000000: Write32CartridgeDomain2Address2(); break;
     case 0x1FC00000: Write32PifRam(); break;
+    case 0x1FE00000: Write32IPC(); break;
     default:
         return false;
         break;
@@ -1581,6 +1583,19 @@ void CMipsMemoryVM::Load32Rom(void)
     }
 }
 
+void CMipsMemoryVM::Load32IPC(void)
+{
+    if (!g_System->m_IPC.Enabled())
+    {
+        m_MemLookupValue.UW[0] = m_MemLookupAddress & 0xFFFF;
+        m_MemLookupValue.UW[0] = (m_MemLookupValue.UW[0] << 16) | m_MemLookupValue.UW[0];
+    }
+    else
+    {
+        m_MemLookupValue.UW[0] = g_System->m_IPC.Read(m_MemLookupAddress & 0x1FFFFFFF);
+    }
+}
+
 void CMipsMemoryVM::Write32RDRAMRegisters(void)
 {
     switch ((m_MemLookupAddress & 0xFFFFFFF))
@@ -2222,4 +2237,9 @@ void CMipsMemoryVM::Write32PifRam(void)
             g_MMU->PifRamWrite();
         }
     }
+}
+
+void CMipsMemoryVM::Write32IPC(void)
+{
+    g_System->m_IPC.Write(m_MemLookupAddress & 0x1FFFFFFF, m_MemLookupValue.UW[0]);
 }

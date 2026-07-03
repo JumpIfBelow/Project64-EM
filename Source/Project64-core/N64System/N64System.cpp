@@ -713,6 +713,7 @@ void CN64System::StartEmulation2(bool NewThread)
         }
 
         WriteTrace(TraceN64System, TraceDebug, "Setting system as active");
+        m_IPC.Reset();
         if (!m_Plugins->Reset(this) || !m_Plugins->initilized())
         {
             WriteTrace(TraceN64System, TraceWarning, "Can't run, plugins not initialized");
@@ -785,6 +786,7 @@ void CN64System::Pause()
 
 void CN64System::GameReset()
 {
+    m_IPC.Reset();
     m_SystemTimer.SetTimer(CSystemTimer::SoftResetTimer, 0x3000000, false);
     m_Plugins->Gfx()->ShowCFB();
     m_Reg.FAKE_CAUSE_REGISTER |= CAUSE_IP4;
@@ -843,6 +845,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMenory)
     WriteTrace(TraceN64System, TraceDebug, "Start (bInitReg: %s, ClearMenory: %s)", bInitReg ? "true" : "false", ClearMenory ? "true" : "false");
     g_Settings->SaveBool(GameRunning_InReset, true);
     RefreshGameSettings();
+    m_IPC.Reset();
     m_Audio.Reset();
     m_MMU_VM.Reset(ClearMenory);
 
