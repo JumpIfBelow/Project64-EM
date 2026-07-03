@@ -2,6 +2,9 @@
 #include <cstdio>
 #include "IPC.h"
 
+#define IPC_MAGIC_IN    0xae67e45b
+#define IPC_MAGIC_OUT   0x64738358
+
 /**
  * Custom IPC subsystem.
  *
@@ -34,7 +37,13 @@ bool CIPC::Enabled() const
 
 uint32_t CIPC::Read(uint32_t PAddr)
 {
-    return 0;
+    switch (PAddr & 0xff)
+    {
+    case 0x00:
+        return IPC_MAGIC_OUT;
+    default:
+        return 0;
+    }
 }
 
 void CIPC::Write(uint32_t PAddr, uint32_t Value)
@@ -43,4 +52,14 @@ void CIPC::Write(uint32_t PAddr, uint32_t Value)
 
     snprintf(buffer, sizeof(buffer), "IPC Write: PAddr=0x%08X, Value=0x%08X", PAddr, Value);
     MessageBoxA(nullptr, buffer, "IPC Write", MB_OK);
+
+    switch (PAddr & 0xff)
+    {
+    case 0x00:
+        if (Value == IPC_MAGIC_IN)
+            m_Enabled = true;
+        else
+            Reset();
+        break;
+    }
 }
