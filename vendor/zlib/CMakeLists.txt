@@ -20,7 +20,11 @@ endif()
 
 ExternalProject_Add(
   ep_zlib
-  URL                         "https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz"
+  URL
+    "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
+    "https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz"
+    "https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz"
+  URL_HASH                    SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
   DOWNLOAD_EXTRACT_TIMESTAMP  TRUE
   INSTALL_DIR                 "${ZLIB_INSTALL_DIR}"
   CMAKE_ARGS
