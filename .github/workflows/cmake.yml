@@ -37,7 +37,7 @@ jobs:
         cmake -E remove_directory ./pkg/_CPack_Packages
       working-directory: ./build
     - name: Upload Artifact
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.name }}
         path: build/pkg
