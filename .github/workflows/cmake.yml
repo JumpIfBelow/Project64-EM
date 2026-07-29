@@ -37,7 +37,7 @@ jobs:
         cmake -E remove_directory ./pkg/_CPack_Packages
       working-directory: ./build
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ matrix.name }}
         path: build/pkg
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download win32
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v8
         with:
           name: win32
           path: pkg
