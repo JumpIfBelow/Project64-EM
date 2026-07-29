@@ -29,6 +29,7 @@ CIPC::CIPC(CMipsMemoryVM& memory)
 , m_PipeServer(INVALID_HANDLE_VALUE)
 , m_RamAddr(0)
 , m_LastMessageSize(0)
+, m_PipeCounter(0)
 {
 }
 
@@ -75,10 +76,6 @@ uint32_t CIPC::Read(uint32_t PAddr)
 void CIPC::Write(uint32_t PAddr, uint32_t Value)
 {
     uint32_t off;
-    char buffer[256];
-
-    snprintf(buffer, sizeof(buffer), "IPC Write: PAddr=0x%08X, Value=0x%08X", PAddr, Value);
-    MessageBoxA(nullptr, buffer, "IPC Write", MB_OK);
 
     off = PAddr & 0xff;
     if (off == 0x00)
@@ -185,11 +182,11 @@ void CIPC::PerformRead(uint32_t size)
     /* Try to read a message from the named pipe */
     if (!ReadFile(m_PipeServer, buffer, size, &bytesRead, nullptr))
     {
+        m_LastMessageSize = 0;
         err = GetLastError();
         if (err == ERROR_NO_DATA)
         {
             /* Nonblocking pipe with nothing queued - not an error */
-            m_LastMessageSize = 0;
             return;
         }
         m_Error = true;
