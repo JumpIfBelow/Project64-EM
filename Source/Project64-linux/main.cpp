@@ -351,6 +351,7 @@ int main(int argc, char ** argv)
     QApplication::setOrganizationName("Project64-EM");
     QApplication::setQuitOnLastWindowClosed(false);
 
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0)
     {
         std::fprintf(stderr, "Unable to initialize SDL: %s\n", SDL_GetError());
