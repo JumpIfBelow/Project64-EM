@@ -438,14 +438,32 @@ void gfxResizeWindow(uint32_t width, uint32_t height)
     }
     screen_width = static_cast<int>(width);
     screen_height = static_cast<int>(height);
-    if (render_to_texture)
-    {
-        return;
-    }
     g_width = screen_width;
     g_height = screen_height;
     widtho = g_width / 2;
     heighto = g_height / 2;
+
+    if (!use_fbo && nbAuxBuffers == 0)
+    {
+        int texture_width = screen_width;
+        int texture_height = screen_height;
+        if (!npot_support)
+        {
+            texture_width = 1;
+            texture_height = 1;
+            while (texture_width < screen_width) texture_width <<= 1;
+            while (texture_height < screen_height) texture_height <<= 1;
+        }
+
+        GLint bound_texture = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound_texture);
+        glBindTexture(GL_TEXTURE_2D, color_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, texture_width, texture_height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(bound_texture));
+        save_w = 0;
+        save_h = 0;
+    }
+
     glViewport(0, g_viewport_offset, g_width, g_height);
     glScissor(0, g_viewport_offset, g_width, g_height);
     viewport_width = g_width;
@@ -553,7 +571,12 @@ bool gfxSstWinOpen(gfxColorFormat_t color_format, gfxOriginLocation_t origin_loc
 
     WriteTrace(TraceGlitch, TraceDebug, "color_format: %d, origin_location: %d, nColBuffers: %d, nAuxBuffers: %d", color_format, origin_location, nColBuffers, nAuxBuffers);
 
-    TMU_SIZE = ((g_settings->wrpVRAM() * 1024 * 1024) - g_width * g_height * 4 * 3) / 2;
+#if defined(PJ64_SDL_VIDEO)
+    const int wrapperVRAM = maxval(g_settings->wrpVRAM(), 128);
+#else
+    const int wrapperVRAM = g_settings->wrpVRAM();
+#endif
+    TMU_SIZE = ((wrapperVRAM * 1024 * 1024) - g_width * g_height * 4 * 3) / 2;
 
     // Save screen resolution for hwfbe (hardware framebuffer emulation?), after resolution enumeration
     screen_width = g_width;

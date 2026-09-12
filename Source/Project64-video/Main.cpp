@@ -240,7 +240,12 @@ int GetTexAddrNonUMA(int tmu, int texsize)
 void guLoadTextures()
 {
     int tbuf_size = 0;
-    if (g_scr_res_x <= 1024)
+#if defined(PJ64_SDL_VIDEO)
+    const bool useLargeTextureBuffers = true;
+#else
+    const bool useLargeTextureBuffers = g_scr_res_x > 1024;
+#endif
+    if (!useLargeTextureBuffers)
     {
         gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], GFX_LOD_LOG2_1024, GFX_LOD_LOG2_1024,
             GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
