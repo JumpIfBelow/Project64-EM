@@ -1868,7 +1868,7 @@ void setTBufTex(uint16_t t_mem, uint32_t cnt)
     }
 }
 
-static inline void loadBlock(uint32_t *src, uint32_t *dst, uint32_t off, int dxt, int cnt)
+static inline void loadBlock(uint32_t *src, uint32_t *dst, uint32_t off, uint32_t dxt, int cnt)
 {
     uint32_t *v5;
     int v6;
@@ -1881,7 +1881,7 @@ static inline void loadBlock(uint32_t *src, uint32_t *dst, uint32_t off, int dxt
     uint32_t v13;
     uint32_t v14;
     int v15;
-    int v16;
+    uint32_t v16;
     uint32_t *v17;
     int v18;
     uint32_t v19;
@@ -1953,7 +1953,7 @@ dxt_test:
         if (!v15)
             break;
         v16 += dxt;
-        if (v16 < 0)
+        if ((v16 & 0x80000000U) != 0)
         {
             while (1)
             {
@@ -1962,7 +1962,7 @@ dxt_test:
                 if (!v15)
                     goto end_dxt_test;
                 v16 += dxt;
-                if (v16 >= 0)
+                if ((v16 & 0x80000000U) == 0)
                 {
                     for (i = v15; v18; --v18)
                     {
