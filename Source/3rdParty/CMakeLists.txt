@@ -1,2 +1,4 @@
 add_subdirectory(7zip)
-add_subdirectory(discord-rpc)
+if(WIN32)
+  add_subdirectory(discord-rpc)
+endif()

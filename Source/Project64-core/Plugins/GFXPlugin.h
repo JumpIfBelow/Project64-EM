@@ -84,7 +84,7 @@ private:
     void(CALL *GetDebugInfo)    (GFXDEBUG_INFO * GFXDebugInfo);
     void(CALL *InitiateDebugger)(DEBUG_INFO DebugInfo);
 
-#ifdef ANDROID
+#ifndef _WIN32
     static void SwapBuffers(void);
 #endif
     static void CALL DummyDrawScreen(void) {}

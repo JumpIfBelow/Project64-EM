@@ -135,7 +135,7 @@ extern "C" {
         uint32_t * VI_Y_SCALE_REG;
 
         void(*CheckInterrupts)(void);
-#ifdef ANDROID
+#ifndef _WIN32
         void(CALL *SwapBuffers)(void);
 #endif
     } GFX_INFO;

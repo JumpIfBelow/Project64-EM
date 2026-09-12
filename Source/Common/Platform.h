@@ -2,7 +2,10 @@
 
 #ifndef _WIN32
 #include <alloca.h>
+#include <cmath>
+#include <cstdio>
 #include <stdarg.h>
+#include <strings.h>
 
 #define stricmp strcasecmp
 #define _stricmp strcasecmp

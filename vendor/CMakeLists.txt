@@ -1,3 +1,5 @@
 add_subdirectory(zlib)
 add_subdirectory(minizip)
-add_subdirectory(lua)
+if(WIN32)
+  add_subdirectory(lua)
+endif()

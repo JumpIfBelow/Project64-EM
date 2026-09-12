@@ -5,6 +5,7 @@
 #include "SettingsID.h"
 #include "trace.h"
 #include "Gfx_1.3.h"
+#include <cstring>
 
 CSettings::CSettings() :
     m_Set_basic_mode(0),

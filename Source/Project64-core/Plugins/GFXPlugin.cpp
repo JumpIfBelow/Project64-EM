@@ -153,7 +153,7 @@ bool CGfxPlugin::Initiate(CN64System * System, RenderWindow * Window)
         uint32_t * VI__Y_SCALE_REG;
 
         void(CALL *CheckInterrupts)(void);
-#ifdef ANDROID
+#ifndef _WIN32
         void(CALL *SwapBuffers)(void);
 #endif
     } GFX_INFO;
@@ -170,7 +170,7 @@ bool CGfxPlugin::Initiate(CN64System * System, RenderWindow * Window)
     GFX_INFO Info = { 0 };
 
     Info.MemoryBswaped = true;
-#if defined(ANDROID) || defined(__ANDROID__)
+#ifndef _WIN32
     Info.SwapBuffers = SwapBuffers;
 #endif
     Info.hWnd = nullptr;
@@ -295,7 +295,7 @@ void CGfxPlugin::ProcessMenuItem(int32_t id)
     }
 }
 
-#ifdef ANDROID
+#ifndef _WIN32
 void CGfxPlugin::SwapBuffers(void)
 {
     RenderWindow * render = g_Plugins ? g_Plugins->MainWindow() : nullptr;

@@ -39,7 +39,7 @@
 
 #include "TxHiResCache.h"
 #include "TxDbg.h"
-#include <zlib/zlib.h>
+#include <zlib.h>
 #include <string>
 #include <Common/path.h>
 #include <Common/StdString.h>

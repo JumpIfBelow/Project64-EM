@@ -2,6 +2,7 @@
 #include "path.h"
 #include "Platform.h"
 #include <stdio.h>
+#include <cstring>
 #include <stdarg.h>
 
 CLog::CLog (void ) :

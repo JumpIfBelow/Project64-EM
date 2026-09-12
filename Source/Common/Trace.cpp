@@ -1,7 +1,9 @@
 #include "Trace.h"
 #include "StdString.h"
 #include "CriticalSection.h"
+#include "Platform.h"
 #include "Thread.h"
+#include <ctime>
 #include <map>
 #include <vector>
 #ifdef _WIN32

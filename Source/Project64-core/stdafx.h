@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include <Common/Platform.h>
 #include <Common/MemTest.h>
 #include <stdint.h>
 #include <Common/StdString.h>

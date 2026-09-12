@@ -153,7 +153,7 @@ void CPlugin::RomOpened(RenderWindow * Render)
         return;
     }
 
-#ifdef ANDROID
+#ifndef _WIN32
     if (m_PluginInfo.Type == PLUGIN_TYPE_GFX)
     {
         WriteTrace(PluginTraceType(), TraceDebug, "Render = %p", Render);
@@ -165,7 +165,7 @@ void CPlugin::RomOpened(RenderWindow * Render)
         }
     }
 #else
-    Render = Render; // Used just for the Android port
+    Render = Render;
 #endif
 
     if (RomOpen != nullptr)
@@ -185,7 +185,7 @@ void CPlugin::RomClose(RenderWindow * Render)
         return;
     }
 
-#ifdef ANDROID
+#ifndef _WIN32
     if (m_PluginInfo.Type == PLUGIN_TYPE_GFX)
     {
         WriteTrace(PluginTraceType(), TraceDebug, "Render = %p", Render);
@@ -197,7 +197,7 @@ void CPlugin::RomClose(RenderWindow * Render)
         }
     }
 #else
-    Render = Render; // Used just for the Android port
+    Render = Render;
 #endif
 
     WriteTrace(PluginTraceType(), TraceDebug, "Before ROM close");

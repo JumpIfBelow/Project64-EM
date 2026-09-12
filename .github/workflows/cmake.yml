@@ -15,10 +15,14 @@ jobs:
       matrix:
         name:
           - win32
+          - linux-x64
         include:
           - name: win32
             os: windows-latest
             cmake_opts: -A Win32
+          - name: linux-x64
+            os: ubuntu-24.04
+            cmake_opts: -G Ninja -DCMAKE_BUILD_TYPE=Release
     runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout
@@ -26,6 +30,11 @@ jobs:
     - name: Setup
       run: |
         mkdir build
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libsdl2-dev libgl1-mesa-dev libssl-dev
     - name: Build
       run: |
         cmake .. ${{ matrix.cmake_opts }}
@@ -50,6 +59,11 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: win32
+          path: pkg
+      - name: Download linux-x64
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x64
           path: pkg
       - name: Release
         uses: softprops/action-gh-release@v1

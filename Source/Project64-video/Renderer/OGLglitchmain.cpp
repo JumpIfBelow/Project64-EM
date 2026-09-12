@@ -16,7 +16,9 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
+#include <SDL.h>
 #endif // _WIN32
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
@@ -33,6 +35,69 @@ used only in g_Notify->DisplayError when OpenGL extension loading fails on WGL
 */
 
 #include <Settings/Settings.h>
+
+#ifndef _WIN32
+PFNGLBLENDFUNCSEPARATEEXTPROC glBlendFuncSeparateEXT = nullptr;
+PFNGLFOGCOORDFEXTPROC glFogCoordfEXT = nullptr;
+PFNGLBINDFRAMEBUFFEREXTPROC glBindFramebufferEXT = nullptr;
+PFNGLFRAMEBUFFERTEXTURE2DEXTPROC glFramebufferTexture2DEXT = nullptr;
+PFNGLGENFRAMEBUFFERSEXTPROC glGenFramebuffersEXT = nullptr;
+PFNGLBINDRENDERBUFFEREXTPROC glBindRenderbufferEXT = nullptr;
+PFNGLDELETERENDERBUFFERSEXTPROC glDeleteRenderbuffersEXT = nullptr;
+PFNGLGENRENDERBUFFERSEXTPROC glGenRenderbuffersEXT = nullptr;
+PFNGLRENDERBUFFERSTORAGEEXTPROC glRenderbufferStorageEXT = nullptr;
+PFNGLFRAMEBUFFERRENDERBUFFEREXTPROC glFramebufferRenderbufferEXT = nullptr;
+PFNGLCHECKFRAMEBUFFERSTATUSEXTPROC glCheckFramebufferStatusEXT = nullptr;
+PFNGLDELETEFRAMEBUFFERSEXTPROC glDeleteFramebuffersEXT = nullptr;
+PFNGLCREATESHADEROBJECTARBPROC glCreateShaderObjectARB = nullptr;
+PFNGLSHADERSOURCEARBPROC glShaderSourceARB = nullptr;
+PFNGLCOMPILESHADERARBPROC glCompileShaderARB = nullptr;
+PFNGLCREATEPROGRAMOBJECTARBPROC glCreateProgramObjectARB = nullptr;
+PFNGLATTACHOBJECTARBPROC glAttachObjectARB = nullptr;
+PFNGLLINKPROGRAMARBPROC glLinkProgramARB = nullptr;
+PFNGLUSEPROGRAMOBJECTARBPROC glUseProgramObjectARB = nullptr;
+PFNGLGETUNIFORMLOCATIONARBPROC glGetUniformLocationARB = nullptr;
+PFNGLUNIFORM1IARBPROC glUniform1iARB = nullptr;
+PFNGLUNIFORM4FARBPROC glUniform4fARB = nullptr;
+PFNGLUNIFORM1FARBPROC glUniform1fARB = nullptr;
+PFNGLGETINFOLOGARBPROC glGetInfoLogARB = nullptr;
+PFNGLGETOBJECTPARAMETERIVARBPROC glGetObjectParameterivARB = nullptr;
+PFNGLSECONDARYCOLOR3FPROC glSecondaryColor3f = nullptr;
+PFNGLCOMPRESSEDTEXIMAGE2DARBPROC glCompressedTexImage2DARB = nullptr;
+
+static void LoadOpenGLExtensions()
+{
+#define LOAD_GL_EXTENSION(name) name = reinterpret_cast<decltype(name)>(SDL_GL_GetProcAddress(#name))
+    LOAD_GL_EXTENSION(glBlendFuncSeparateEXT);
+    LOAD_GL_EXTENSION(glFogCoordfEXT);
+    LOAD_GL_EXTENSION(glBindFramebufferEXT);
+    LOAD_GL_EXTENSION(glFramebufferTexture2DEXT);
+    LOAD_GL_EXTENSION(glGenFramebuffersEXT);
+    LOAD_GL_EXTENSION(glBindRenderbufferEXT);
+    LOAD_GL_EXTENSION(glDeleteRenderbuffersEXT);
+    LOAD_GL_EXTENSION(glGenRenderbuffersEXT);
+    LOAD_GL_EXTENSION(glRenderbufferStorageEXT);
+    LOAD_GL_EXTENSION(glFramebufferRenderbufferEXT);
+    LOAD_GL_EXTENSION(glCheckFramebufferStatusEXT);
+    LOAD_GL_EXTENSION(glDeleteFramebuffersEXT);
+    LOAD_GL_EXTENSION(glCreateShaderObjectARB);
+    LOAD_GL_EXTENSION(glShaderSourceARB);
+    LOAD_GL_EXTENSION(glCompileShaderARB);
+    LOAD_GL_EXTENSION(glCreateProgramObjectARB);
+    LOAD_GL_EXTENSION(glAttachObjectARB);
+    LOAD_GL_EXTENSION(glLinkProgramARB);
+    LOAD_GL_EXTENSION(glUseProgramObjectARB);
+    LOAD_GL_EXTENSION(glGetUniformLocationARB);
+    LOAD_GL_EXTENSION(glUniform1iARB);
+    LOAD_GL_EXTENSION(glUniform4fARB);
+    LOAD_GL_EXTENSION(glUniform1fARB);
+    LOAD_GL_EXTENSION(glGetInfoLogARB);
+    LOAD_GL_EXTENSION(glGetObjectParameterivARB);
+    LOAD_GL_EXTENSION(glSecondaryColor3f);
+    LOAD_GL_EXTENSION(glCompressedTexImage2DARB);
+#undef LOAD_GL_EXTENSION
+}
+#endif
 
 int screen_width, screen_height;
 
@@ -461,18 +526,17 @@ bool gfxSstWinOpen(gfxColorFormat_t color_format, gfxOriginLocation_t origin_loc
     pfd.cAuxBuffers = 1;
 
     int pfm;
-#else
-    fputs("ERROR: No GLX yet to start GL on [Free]BSD, Linux etc.\n", stderr);
 #endif // _WIN32
 
     WriteTrace(TraceGlitch, TraceDebug, "color_format: %d, origin_location: %d, nColBuffers: %d, nAuxBuffers: %d", color_format, origin_location, nColBuffers, nAuxBuffers);
 
-#ifdef _WIN32
     TMU_SIZE = ((g_settings->wrpVRAM() * 1024 * 1024) - g_width * g_height * 4 * 3) / 2;
 
     // Save screen resolution for hwfbe (hardware framebuffer emulation?), after resolution enumeration
     screen_width = g_width;
     screen_height = g_height;
+
+#ifdef _WIN32
 
     if ((HWND)gfx.hWnd != nullptr)
     {
@@ -519,6 +583,9 @@ bool gfxSstWinOpen(gfxColorFormat_t color_format, gfxOriginLocation_t origin_loc
         }
     }
 #endif // _WIN32
+#ifndef _WIN32
+    LoadOpenGLExtensions();
+#endif
     lfb_color_fmt = color_format;
     if (origin_location != GFX_ORIGIN_UPPER_LEFT) WriteTrace(TraceGlitch, TraceWarning, "Origin must be in upper left corner");
     if (nColBuffers != 2) WriteTrace(TraceGlitch, TraceWarning, "Number of color buffer is not 2");
@@ -1464,6 +1531,10 @@ void gfxBufferSwap(uint32_t swap_interval)
 #ifdef _WIN32
     SwapBuffers(wglGetCurrentDC());
 #else // _WIN32
+    if (gfx.SwapBuffers != nullptr)
+    {
+        gfx.SwapBuffers();
+    }
 #endif // _WIN32
     for (i = 0; i < nb_fb; i++)
         fbs[i].buff_clear = 1;

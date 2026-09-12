@@ -86,7 +86,11 @@ private:
     static uint32_t ConvertXP64Address(uint32_t Address);
     static uint16_t ConvertXP64Value(uint16_t Value);
 
+#ifdef _WIN32
     static uint32_t stScanFileThread(void * lpThreadParameter) { ((CEnhancements *)lpThreadParameter)->ScanFileThread(); return 0; }
+#else
+    static void * stScanFileThread(void * lpThreadParameter) { ((CEnhancements *)lpThreadParameter)->ScanFileThread(); return nullptr; }
+#endif
 
     CriticalSection m_CS;
     SectionFiles m_CheatFiles, m_EnhancementFiles;

@@ -4,6 +4,8 @@ typedef const char *     LPCSTR;
 #include <string.h>
 #include <stdlib.h>
 #include <memory.h>
+#include <filesystem>
+#include <vector>
 #include "7zip.h"
 #include <Common/StdString.h>
 
@@ -33,16 +35,21 @@ m_Opened(false)
     m_allocTempImp.Alloc = AllocAllocImp;
     m_allocTempImp.Free = AllocFreeImp;
 
-    InFile_Open(&m_archiveStream.file, FileName);
-    if (m_archiveStream.file.handle == INVALID_HANDLE_VALUE)
+    File_Construct(&m_archiveStream.file);
+    if (InFile_Open(&m_archiveStream.file, FileName) != 0)
     {
-        //PrintError("Can not open input file");
         return;
     }
-    m_FileSize = GetFileSize(m_archiveStream.file.handle, nullptr);
+    UInt64 fileSize = 0;
+    if (File_GetLength(&m_archiveStream.file, &fileSize) != 0)
+    {
+        File_Close(&m_archiveStream.file);
+        return;
+    }
+    m_FileSize = static_cast<int>(fileSize);
 
-    char drive[_MAX_DRIVE], dir[_MAX_DIR], ext[_MAX_EXT];
-    _splitpath(FileName, drive, dir, m_FileName, ext);
+    const std::string archiveName = std::filesystem::path(FileName).stem().string();
+    strncpy(m_FileName, archiveName.c_str(), sizeof(m_FileName) - 1);
 
     CrcGenerateTable();
     SzArEx_Init(m_db);
@@ -56,33 +63,22 @@ m_Opened(false)
     {
         m_Opened = true;
     }
-    else
-    {
-        // SzArEx_Open will delete the passed database if it fails
-        m_db = nullptr;
-    }
 }
 
 C7zip::~C7zip(void)
 {
     if (m_db)
     {
+        SzArEx_Free(m_db, &m_allocImp);
         delete m_db;
         m_db = nullptr;
     }
-#ifdef legacycode
-    SetNotificationCallback(nullptr,nullptr);
-    SzArDbExFree(&m_db, m_allocImp.Free);
-
-    if (m_archiveStream.File)
-    {
-        fclose(m_archiveStream.File);
-    }
+    File_Close(&m_archiveStream.file);
     if (m_outBuffer)
     {
-        m_allocImp.Free(m_outBuffer);
+        m_allocImp.Free(&m_allocImp, m_outBuffer);
+        m_outBuffer = nullptr;
     }
-#endif
 }
 
 void C7zip::SetNotificationCallback(LP7ZNOTIFICATION NotfyFnc, void * CBInfo)
@@ -118,7 +114,7 @@ bool C7zip::GetFile(int index, Byte * Data, size_t DataLen)
     {
         return false;
     }
-    if (m_archiveStream.file.handle == INVALID_HANDLE_VALUE)
+    if (!m_Opened)
     {
         return false;
     }
@@ -128,8 +124,7 @@ bool C7zip::GetFile(int index, Byte * Data, size_t DataLen)
     size_t outSizeProcessed;
 
     char Msg[200];
-    std::wstring FileName = FileNameIndex(index);
-    _snprintf(Msg, sizeof(Msg) / sizeof(Msg[0]), "extracting %s", stdstr().FromUTF16(FileName.c_str()).c_str());
+    snprintf(Msg, sizeof(Msg), "extracting archive entry %d", index);
     m_NotfyCallback(Msg, m_NotfyCallbackInfo);
 
     SRes res = SzArEx_Extract(m_db, &m_archiveLookStream.s, index,
@@ -169,41 +164,17 @@ void C7zip::AllocFreeImp(void * /*p*/, void *address)
 SRes C7zip::SzFileReadImp(void *object, void *buffer, size_t *processedSize)
 {
     CFileInStream *p = (CFileInStream *)object;
-    DWORD dwRead;
-    if (!ReadFile(p->file.handle, buffer, *processedSize, &dwRead, nullptr))
+    if (File_Read(&p->file, buffer, processedSize) != 0)
     {
         return SZ_ERROR_FAIL;
     }
-    //p->s.curpos += read_sz;
-    *processedSize = dwRead;
     return SZ_OK;
 }
 
 SRes C7zip::SzFileSeekImp(void *p, Int64 *pos, ESzSeek origin)
 {
     CFileInStream *s = (CFileInStream *)p;
-    DWORD dwMoveMethod;
-
-    switch (origin)
-    {
-    case SZ_SEEK_SET:
-        dwMoveMethod = FILE_BEGIN;
-        break;
-    case SZ_SEEK_CUR:
-        dwMoveMethod = FILE_CURRENT;
-        break;
-    case SZ_SEEK_END:
-        dwMoveMethod = FILE_END;
-        break;
-    default:
-        return SZ_ERROR_FAIL;
-    }
-    *pos = SetFilePointer(s->file.handle, (LONG)*pos, nullptr, dwMoveMethod);
-    if (*pos == INVALID_SET_FILE_POINTER)
-    {
-        return SZ_ERROR_FAIL;
-    }
-    return SZ_OK;
+    return File_Seek(&s->file, pos, origin) == 0 ? SZ_OK : SZ_ERROR_FAIL;
 }
 
 const char * C7zip::FileName(char * FileName, int SizeOfFileName) const
@@ -236,7 +207,12 @@ std::wstring C7zip::FileNameIndex(int index)
         // No filename
         return filename;
     }
-    filename.resize(namelen);
-    SzArEx_GetFileNameUtf16(m_db, index, (UInt16 *)filename.c_str());
+    std::vector<UInt16> utf16(namelen);
+    SzArEx_GetFileNameUtf16(m_db, index, utf16.data());
+    filename.reserve(namelen);
+    for (int i = 0; i < namelen - 1; ++i)
+    {
+        filename.push_back(static_cast<wchar_t>(utf16[i]));
+    }
     return filename;
 }

@@ -1,4 +1,5 @@
 #include "IniFile.h"
+#include <cstring>
 #include <stdlib.h>
 #include <stdarg.h>
 
