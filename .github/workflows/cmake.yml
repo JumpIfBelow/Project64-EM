@@ -36,9 +36,25 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ninja-build libsdl2-dev libgl1-mesa-dev libssl-dev
     - name: Build
+      shell: bash
       run: |
-        cmake .. ${{ matrix.cmake_opts }}
-        cmake --build . --config Release
+        {
+          cmake .. ${{ matrix.cmake_opts }}
+          cmake --build . --config Release
+        } 2>&1 | tee build.log
+      working-directory: ./build
+    - name: Report build errors
+      if: failure()
+      shell: bash
+      run: |
+        grep -Ei '(: error |fatal error|cmake error|FAILED:|ninja: error|MSB[0-9]+: error)' build.log |
+          tail -20 |
+          while IFS= read -r line; do
+            line=${line//'%'/'%25'}
+            line=${line//$'\r'/'%0D'}
+            line=${line//$'\n'/'%0A'}
+            echo "::error::$line"
+          done
       working-directory: ./build
     - name: Package
       run: |
