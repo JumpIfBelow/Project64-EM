@@ -241,30 +241,17 @@ void guLoadTextures()
 {
     int tbuf_size = 0;
 #if defined(PJ64_SDL_VIDEO)
-    const bool useLargeTextureBuffers = true;
+    const gfxLOD_t textureBufferLod = GFX_LOD_LOG2_4096;
 #else
-    const bool useLargeTextureBuffers = g_scr_res_x > 1024;
+    const gfxLOD_t textureBufferLod = g_scr_res_x > 1024 ? GFX_LOD_LOG2_2048 : GFX_LOD_LOG2_1024;
 #endif
-    if (!useLargeTextureBuffers)
-    {
-        gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], GFX_LOD_LOG2_1024, GFX_LOD_LOG2_1024,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
-        tbuf_size = gfxTexCalcMemRequired(GFX_LOD_LOG2_1024, GFX_LOD_LOG2_1024,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565);
-        gfxRenderBuffer(GFX_BUFFER_TEXTUREBUFFER_EXT);
-        gfxBufferClear(0, 0, 0xFFFF);
-        gfxRenderBuffer(GFX_BUFFER_BACKBUFFER);
-    }
-    else
-    {
-        gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], GFX_LOD_LOG2_2048, GFX_LOD_LOG2_2048,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
-        tbuf_size = gfxTexCalcMemRequired(GFX_LOD_LOG2_2048, GFX_LOD_LOG2_2048,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565);
-        gfxRenderBuffer(GFX_BUFFER_TEXTUREBUFFER_EXT);
-        gfxBufferClear(0, 0, 0xFFFF);
-        gfxRenderBuffer(GFX_BUFFER_BACKBUFFER);
-    }
+    gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], textureBufferLod, textureBufferLod,
+        GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
+    tbuf_size = gfxTexCalcMemRequired(textureBufferLod, textureBufferLod,
+        GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565);
+    gfxRenderBuffer(GFX_BUFFER_TEXTUREBUFFER_EXT);
+    gfxBufferClear(0, 0, 0xFFFF);
+    gfxRenderBuffer(GFX_BUFFER_BACKBUFFER);
 
     rdp.texbufs[0].tmu = GFX_TMU0;
     rdp.texbufs[0].begin = voodoo.tex_min_addr[GFX_TMU0];

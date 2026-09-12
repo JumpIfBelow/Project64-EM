@@ -140,6 +140,12 @@ void DrawHiresDepthImage(const DRAWIMAGE & d)
     gfxDepthMask(false);
 
     gfxLOD_t LOD = g_scr_res_x > 1024 ? GFX_LOD_LOG2_2048 : GFX_LOD_LOG2_1024;
+#if defined(PJ64_SDL_VIDEO)
+    if (g_scr_res_x > 2048)
+    {
+        LOD = GFX_LOD_LOG2_4096;
+    }
+#endif
 
     float lr_x = (float)d.imageW * rdp.scale_x;
     float lr_y = (float)d.imageH * rdp.scale_y;

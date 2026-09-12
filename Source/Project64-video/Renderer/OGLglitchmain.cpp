@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <math.h>
 #include "glitchmain.h"
 #include <Project64-video/trace.h>
@@ -387,8 +388,8 @@ struct texbuf_t {
 static texbuf_t texbufs[NB_TEXBUFS];
 static int texbuf_i;
 
-unsigned short frameBuffer[2048 * 2048];
-unsigned short depthBuffer[2048 * 2048];
+std::vector<unsigned short> frameBuffer;
+std::vector<unsigned short> depthBuffer;
 
 void gfxClipWindow(uint32_t minx, uint32_t miny, uint32_t maxx, uint32_t maxy)
 {
@@ -572,7 +573,12 @@ bool gfxSstWinOpen(gfxColorFormat_t color_format, gfxOriginLocation_t origin_loc
     WriteTrace(TraceGlitch, TraceDebug, "color_format: %d, origin_location: %d, nColBuffers: %d, nAuxBuffers: %d", color_format, origin_location, nColBuffers, nAuxBuffers);
 
 #if defined(PJ64_SDL_VIDEO)
-    const int wrapperVRAM = maxval(g_settings->wrpVRAM(), 128);
+    constexpr uint64_t textureBufferBytes = 2ULL * 4096 * 4096 * 2;
+    constexpr uint64_t textureCacheBytes = 64ULL * 1024 * 1024;
+    const uint64_t screenBufferBytes = static_cast<uint64_t>(g_width) * g_height * 4 * 3;
+    const int requiredVRAM = static_cast<int>(
+        (screenBufferBytes + textureBufferBytes + textureCacheBytes + 1024 * 1024 - 1) / (1024 * 1024));
+    const int wrapperVRAM = maxval(g_settings->wrpVRAM(), requiredVRAM);
 #else
     const int wrapperVRAM = g_settings->wrpVRAM();
 #endif
@@ -1617,16 +1623,18 @@ bool gfxLfbLock(gfxLock_t type, gfxBuffer_t buffer, gfxLfbWriteMode_t writeMode,
         {
             if (writeMode == GFX_LFBWRITEMODE_888) {
                 //printf("LfbLock GFX_LFBWRITEMODE_888\n");
-                info->lfbPtr = frameBuffer;
+                frameBuffer.resize(static_cast<size_t>(g_width) * g_height * 2);
+                info->lfbPtr = frameBuffer.data();
                 info->strideInBytes = g_width * 4;
                 info->writeMode = GFX_LFBWRITEMODE_888;
                 info->origin = origin;
-                glReadPixels(0, g_viewport_offset, g_width, g_height, GL_BGRA, GL_UNSIGNED_BYTE, frameBuffer);
+                glReadPixels(0, g_viewport_offset, g_width, g_height, GL_BGRA, GL_UNSIGNED_BYTE, frameBuffer.data());
             }
             else {
                 buf = (unsigned char*)malloc(g_width*g_height * 4);
 
-                info->lfbPtr = frameBuffer;
+                frameBuffer.resize(static_cast<size_t>(g_width) * g_height);
+                info->lfbPtr = frameBuffer.data();
                 info->strideInBytes = g_width * 2;
                 info->writeMode = GFX_LFBWRITEMODE_565;
                 info->origin = origin;
@@ -1636,7 +1644,7 @@ bool gfxLfbLock(gfxLock_t type, gfxBuffer_t buffer, gfxLfbWriteMode_t writeMode,
                 {
                     for (i = 0; i < g_width; i++)
                     {
-                        frameBuffer[(g_height - j - 1)*g_width + i] =
+                        frameBuffer[static_cast<size_t>(g_height - j - 1) * g_width + i] =
                             ((buf[j*g_width * 4 + i * 4 + 0] >> 3) << 11) |
                             ((buf[j*g_width * 4 + i * 4 + 1] >> 2) << 5) |
                             (buf[j*g_width * 4 + i * 4 + 2] >> 3);
@@ -1647,11 +1655,12 @@ bool gfxLfbLock(gfxLock_t type, gfxBuffer_t buffer, gfxLfbWriteMode_t writeMode,
         }
         else
         {
-            info->lfbPtr = depthBuffer;
+            depthBuffer.resize(static_cast<size_t>(g_width) * g_height);
+            info->lfbPtr = depthBuffer.data();
             info->strideInBytes = g_width * 2;
             info->writeMode = GFX_LFBWRITEMODE_ZA16;
             info->origin = origin;
-            glReadPixels(0, g_viewport_offset, g_width, g_height, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer);
+            glReadPixels(0, g_viewport_offset, g_width, g_height, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer.data());
         }
     }
 
@@ -1712,19 +1721,18 @@ bool gfxLfbReadRegion(gfxBuffer_t src_buffer, uint32_t src_x, uint32_t src_y, ui
     }
     else
     {
-        buf = (unsigned char*)malloc(src_width*src_height * 2);
-
-        glReadPixels(src_x, (g_viewport_offset)+g_height - src_y - src_height, src_width, src_height, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer);
+        depthBuffer.resize(static_cast<size_t>(src_width) * src_height);
+        glReadPixels(src_x, (g_viewport_offset)+g_height - src_y - src_height, src_width, src_height,
+            GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer.data());
 
         for (j = 0; j < src_height; j++)
         {
             for (i = 0; i < src_width; i++)
             {
                 TargetDepthBuffer[j*(dst_stride / 2) + i] =
-                    ((unsigned short*)buf)[(src_height - j - 1)*src_width * 4 + i * 4];
+                    depthBuffer[static_cast<size_t>(src_height - j - 1) * src_width + i];
             }
         }
-        free(buf);
     }
 
     grDisplayGLError("gfxLfbReadRegion");

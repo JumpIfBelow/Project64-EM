@@ -456,6 +456,13 @@ static void DrawHiresDepthBufferToScreen(FB_TO_SCREEN_INFO & fb_info)
         scale = 0.125f;
         LOD = GFX_LOD_LOG2_2048;
     }
+#if defined(PJ64_SDL_VIDEO)
+    if (g_scr_res_x > 2048)
+    {
+        scale = 0.0625f;
+        LOD = GFX_LOD_LOG2_4096;
+    }
+#endif
     t_info.format = GFX_TEXFMT_ALPHA_INTENSITY_88;
     t_info.smallLodLog2 = t_info.largeLodLog2 = LOD;
     t_info.aspectRatioLog2 = GFX_ASPECT_LOG2_1x1;

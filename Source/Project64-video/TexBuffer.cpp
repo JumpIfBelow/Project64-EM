@@ -28,7 +28,11 @@ static TBUFF_COLOR_IMAGE * AllocateTextureBuffer(COLOR_IMAGE & cimage)
     //  texbuf.scr_height = texbuf.height * rdp.scale_y;
 
     uint16_t max_size = maxval((uint16_t)texbuf.scr_width, (uint16_t)texbuf.scr_height);
-    if (max_size > 2048) //texture size is too large
+#if defined(PJ64_SDL_VIDEO)
+    if (max_size > 4096)
+#else
+    if (max_size > 2048)
+#endif
         return 0;
     uint32_t tex_size;
     //calculate LOD
@@ -65,9 +69,33 @@ static TBUFF_COLOR_IMAGE * AllocateTextureBuffer(COLOR_IMAGE & cimage)
         texbuf.info.smallLodLog2 = texbuf.info.largeLodLog2 = GFX_LOD_LOG2_1024;
         tex_size = 1024;
         break;
-    default:
+    case 16:
+    case 17:
+    case 18:
+    case 19:
+    case 20:
+    case 21:
+    case 22:
+    case 23:
+    case 24:
+    case 25:
+    case 26:
+    case 27:
+    case 28:
+    case 29:
+    case 30:
+    case 31:
         texbuf.info.smallLodLog2 = texbuf.info.largeLodLog2 = GFX_LOD_LOG2_2048;
         tex_size = 2048;
+        break;
+#if defined(PJ64_SDL_VIDEO)
+    default:
+        texbuf.info.smallLodLog2 = texbuf.info.largeLodLog2 = GFX_LOD_LOG2_4096;
+        tex_size = 4096;
+#else
+    default:
+        return 0;
+#endif
     }
     //calculate aspect
     if (texbuf.scr_width >= texbuf.scr_height)
@@ -507,6 +535,13 @@ int CopyDepthBuffer()
         bound = 2048.0f;
         LOD = GFX_LOD_LOG2_2048;
     }
+#if defined(PJ64_SDL_VIDEO)
+    if (g_scr_res_x > 2048)
+    {
+        bound = 4096.0f;
+        LOD = GFX_LOD_LOG2_4096;
+    }
+#endif
     rdp.tbuff_tex = &(rdp.texbufs[0].images[0]);
     rdp.tbuff_tex->tmu = rdp.texbufs[0].tmu;
     rdp.tbuff_tex->info.format = GFX_TEXFMT_RGB_565;

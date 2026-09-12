@@ -269,6 +269,7 @@ EXPORT void GetKeys(int control, BUTTONS * buttons)
     ReloadConfigIfChanged();
     const uint8_t * keys = SDL_GetKeyboardState(nullptr);
     OpenController();
+    SDL_GameControllerUpdate();
     buttons->A_BUTTON = Pressed(keys, KeyboardAction::A) || GamepadPressed(N64Button::A);
     buttons->B_BUTTON = Pressed(keys, KeyboardAction::B) || GamepadPressed(N64Button::B);
     buttons->Z_TRIG = Pressed(keys, KeyboardAction::Z) || GamepadPressed(N64Button::Z);
