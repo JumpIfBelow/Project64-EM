@@ -4,12 +4,24 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 static AUDIO_INFO g_AudioInfo = {};
 static SDL_AudioDeviceID g_Device = 0;
 static uint32_t g_Frequency = 33600;
+static int g_Volume = 100;
+static std::string g_DeviceName;
+
+static void LoadConfiguration()
+{
+    const char * volume = std::getenv("PROJECT64_EM_AUDIO_VOLUME");
+    g_Volume = volume == nullptr ? 100 : std::clamp(std::atoi(volume), 0, 100);
+    const char * device = std::getenv("PROJECT64_EM_AUDIO_DEVICE");
+    g_DeviceName = device == nullptr ? "" : device;
+}
 
 static void CloseDevice()
 {
@@ -34,7 +46,8 @@ static void OpenDevice()
     desired.format = AUDIO_S16SYS;
     desired.channels = 2;
     desired.samples = 1024;
-    g_Device = SDL_OpenAudioDevice(nullptr, 0, &desired, nullptr, 0);
+    const char * device = g_DeviceName.empty() ? nullptr : g_DeviceName.c_str();
+    g_Device = SDL_OpenAudioDevice(device, 0, &desired, nullptr, 0);
     if (g_Device != 0)
     {
         SDL_PauseAudioDevice(g_Device, 0);
@@ -92,6 +105,16 @@ EXPORT void CALL AiLenChanged()
             std::memcpy(samples.data() + offset, source + offset + 2, 2);
             std::memcpy(samples.data() + offset + 2, source + offset, 2);
         }
+        if (g_Volume < 100)
+        {
+            for (uint32_t offset = 0; offset + sizeof(int16_t) <= length; offset += sizeof(int16_t))
+            {
+                int16_t sample;
+                std::memcpy(&sample, samples.data() + offset, sizeof(sample));
+                sample = static_cast<int16_t>(static_cast<int32_t>(sample) * g_Volume / 100);
+                std::memcpy(samples.data() + offset, &sample, sizeof(sample));
+            }
+        }
         SDL_QueueAudio(g_Device, samples.data(), length);
     }
 
@@ -116,6 +139,7 @@ EXPORT void CALL AiUpdate(int32_t wait)
 
 EXPORT void CALL RomOpen()
 {
+    LoadConfiguration();
     OpenDevice();
 }
 

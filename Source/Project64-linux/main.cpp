@@ -1,12 +1,18 @@
 #include <SDL.h>
 
+#include "Launcher.h"
+#include "LinuxConfig.h"
+
 #include <Common/StdString.h>
 #include <Project64-core/AppInit.h>
 #include <Project64-core/Multilanguage/Language.h>
 #include <Project64-core/N64System/N64System.h>
+#include <Project64-core/N64System/Mips/SystemEvents.h>
 #include <Project64-core/N64System/SystemGlobals.h>
+#include <Project64-core/Plugins/GFXPlugin.h>
 #include <Project64-core/Plugins/Plugin.h>
 #include <Project64-core/Settings.h>
+#include <Project64-input-sdl/InputConfig.h>
 
 #include <atomic>
 #include <csignal>
@@ -126,9 +132,10 @@ private:
 class SdlRenderWindow final : public RenderWindow
 {
 public:
-    SdlRenderWindow(SDL_Window * window, SDL_GLContext context) :
+    SdlRenderWindow(SDL_Window * window, SDL_GLContext context, bool vsync) :
         m_Window(window),
-        m_Context(context)
+        m_Context(context),
+        m_Vsync(vsync)
     {
     }
 
@@ -140,7 +147,7 @@ public:
             m_ContextError = true;
             return;
         }
-        SDL_GL_SetSwapInterval(1);
+        SDL_GL_SetSwapInterval(m_Vsync ? 1 : 0);
     }
 
     void GfxThreadDone() override
@@ -164,13 +171,16 @@ public:
 private:
     SDL_Window * m_Window;
     SDL_GLContext m_Context;
+    bool m_Vsync;
     std::atomic_bool m_ContextError{false};
 };
 
 struct Options
 {
     bool showHelp = false;
-    bool fullscreen = false;
+    bool showLauncher = false;
+    bool fullscreenRequested = false;
+    bool windowedRequested = false;
     std::string inputConfig;
     std::string rom;
 };
@@ -178,9 +188,11 @@ struct Options
 void PrintUsage(const char * executable)
 {
     std::fprintf(stdout,
-        "Usage: %s [--fullscreen] [--input-config FILE] ROM\n"
+        "Usage: %s [--configure] [--fullscreen|--windowed] [--input-config FILE] [ROM]\n"
         "\n"
-        "F11 toggles fullscreen. Escape exits.\n",
+        "Without a ROM, the Linux launcher opens. Direct ROM paths skip the launcher.\n"
+        "Runtime: F2 pause, F5 save, F7 load, F8 reset, F9 speed limit,\n"
+        "F11 fullscreen, F12 screenshot, Escape exit.\n",
         executable);
 }
 
@@ -196,7 +208,17 @@ bool ParseOptions(int argc, char ** argv, Options & options)
         }
         if (argument == "--fullscreen")
         {
-            options.fullscreen = true;
+            options.fullscreenRequested = true;
+            continue;
+        }
+        if (argument == "--windowed")
+        {
+            options.windowedRequested = true;
+            continue;
+        }
+        if (argument == "--configure")
+        {
+            options.showLauncher = true;
             continue;
         }
         if (argument == "--input-config")
@@ -222,11 +244,6 @@ bool ParseOptions(int argc, char ** argv, Options & options)
         options.rom = argument;
     }
 
-    if (options.rom.empty())
-    {
-        PrintUsage(argv[0]);
-        return false;
-    }
     return true;
 }
 
@@ -242,12 +259,26 @@ std::string ExecutableDirectory()
     return result;
 }
 
-void SetInputConfig(const Options & options, const std::string & baseDirectory)
+std::filesystem::path UserConfigDirectory(const std::string & baseDirectory)
 {
-    std::filesystem::path configPath = options.inputConfig.empty()
-        ? std::filesystem::path(baseDirectory) / "Config" / "LinuxInput.ini"
-        : std::filesystem::path(options.inputConfig);
-    setenv("PROJECT64_EM_INPUT_CONFIG", configPath.c_str(), 1);
+    const char * xdgConfig = std::getenv("XDG_CONFIG_HOME");
+    if (xdgConfig != nullptr && xdgConfig[0] != '\0' && std::filesystem::path(xdgConfig).is_absolute())
+    {
+        return std::filesystem::path(xdgConfig) / "project64-em";
+    }
+    const char * home = std::getenv("HOME");
+    if (home != nullptr && home[0] != '\0')
+    {
+        return std::filesystem::path(home) / ".config" / "project64-em";
+    }
+    return std::filesystem::path(baseDirectory) / "Config";
+}
+
+std::string InputConfigPath(const Options & options, const std::filesystem::path & userConfigDirectory)
+{
+    return (options.inputConfig.empty()
+        ? userConfigDirectory / "LinuxInput.ini"
+        : std::filesystem::path(options.inputConfig)).string();
 }
 
 bool SetFullscreen(SDL_Window * window, bool fullscreen)
@@ -274,9 +305,14 @@ int main(int argc, char ** argv)
         PrintUsage(argv[0]);
         return EXIT_SUCCESS;
     }
-    if (!std::filesystem::is_regular_file(options.rom))
+    if (!options.showLauncher && !options.rom.empty() && !std::filesystem::is_regular_file(options.rom))
     {
         std::fprintf(stderr, "ROM does not exist or is not a regular file: %s\n", options.rom.c_str());
+        return EXIT_FAILURE;
+    }
+    if (options.fullscreenRequested && options.windowedRequested)
+    {
+        std::fprintf(stderr, "--fullscreen and --windowed cannot be used together\n");
         return EXIT_FAILURE;
     }
 
@@ -295,14 +331,40 @@ int main(int argc, char ** argv)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
+    const std::string baseDirectory = ExecutableDirectory();
+    const std::filesystem::path userConfigDirectory = UserConfigDirectory(baseDirectory);
+    const std::string frontendConfigPath = (userConfigDirectory / "LinuxFrontend.ini").string();
+    const std::string inputConfigPath = InputConfigPath(options, userConfigDirectory);
+    LinuxConfig config;
+    config.Load(frontendConfigPath);
+    pj64::input::InputConfig input;
+    if (!input.Load(inputConfigPath) && options.inputConfig.empty())
+    {
+        input.Load((std::filesystem::path(baseDirectory) / "Config" / "LinuxInput.ini").string());
+        input.Save(inputConfigPath);
+    }
+    if (!options.rom.empty())
+    {
+        config.lastRom = options.rom;
+    }
+    if (options.fullscreenRequested)
+    {
+        config.fullscreen = true;
+    }
+    if (options.windowedRequested)
+    {
+        config.fullscreen = false;
+    }
+
+    const bool showLauncher = options.showLauncher || options.rom.empty();
     const uint32_t windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
-        (options.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+        (!showLauncher && config.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     SDL_Window * window = SDL_CreateWindow(
         "Project64-EM",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        640,
-        480,
+        showLauncher ? 960 : config.windowWidth,
+        showLauncher ? 700 : config.windowHeight,
         windowFlags);
     if (window == nullptr)
     {
@@ -320,10 +382,44 @@ int main(int argc, char ** argv)
         return EXIT_FAILURE;
     }
 
-    const std::string baseDirectory = ExecutableDirectory();
-    SetInputConfig(options, baseDirectory);
+    if (showLauncher && RunLauncher(window, context, config, input, frontendConfigPath, inputConfigPath, &g_SignalReceived) != LauncherResult::Launch)
+    {
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return EXIT_SUCCESS;
+    }
+    options.rom = showLauncher ? config.lastRom : options.rom;
+    if (!std::filesystem::is_regular_file(options.rom))
+    {
+        std::fprintf(stderr, "ROM does not exist or is not a regular file: %s\n", options.rom.c_str());
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+    if (!showLauncher)
+    {
+        config.AddRecentRom(options.rom);
+        config.Save(frontendConfigPath);
+    }
+    config.ApplyEnvironment(inputConfigPath);
+    config.ApplyProjectSettings(baseDirectory);
+
+    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0)
+    {
+        SetFullscreen(window, false);
+    }
+    SDL_SetWindowSize(window, config.windowWidth, config.windowHeight);
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    if (config.fullscreen)
+    {
+        SetFullscreen(window, true);
+    }
+    SDL_SetWindowTitle(window, std::filesystem::path(options.rom).filename().string().c_str());
+
     LinuxNotification notification;
-    SdlRenderWindow renderWindow(window, context);
+    SdlRenderWindow renderWindow(window, context, config.vsync);
 
     std::vector<char *> coreArguments;
     coreArguments.push_back(argv[0]);
@@ -337,13 +433,13 @@ int main(int argc, char ** argv)
     bool romStarted = false;
     if (appInitialized)
     {
-        g_Settings->SaveBool(Setting_ForceInterpreterCPU, true);
+        config.ApplyProjectSettings(baseDirectory);
         g_Plugins->SetRenderWindows(&renderWindow, nullptr);
         SDL_GL_MakeCurrent(window, nullptr);
         romStarted = CN64System::RunFileImage(options.rom.c_str());
     }
 
-    bool fullscreen = options.fullscreen;
+    bool fullscreen = config.fullscreen;
     bool sawRunningCpu = false;
     bool quit = !appInitialized || !romStarted;
     while (!quit)
@@ -365,10 +461,37 @@ int main(int argc, char ** argv)
                 {
                     quit = true;
                 }
+                else if (event.key.keysym.sym == SDLK_F2 && g_BaseSystem != nullptr)
+                {
+                    const bool paused = g_Settings->LoadBool(GameRunning_CPU_Paused);
+                    g_BaseSystem->ExternalEvent(paused ? SysEvent_ResumeCPU_FromMenu : SysEvent_PauseCPU_FromMenu);
+                }
+                else if (event.key.keysym.sym == SDLK_F5 && g_BaseSystem != nullptr)
+                {
+                    g_BaseSystem->ExternalEvent(SysEvent_SaveMachineState);
+                }
+                else if (event.key.keysym.sym == SDLK_F7 && g_BaseSystem != nullptr)
+                {
+                    g_BaseSystem->ExternalEvent(SysEvent_LoadMachineState);
+                }
+                else if (event.key.keysym.sym == SDLK_F8 && g_BaseSystem != nullptr)
+                {
+                    g_BaseSystem->ExternalEvent(SysEvent_ResetCPU_Soft);
+                }
+                else if (event.key.keysym.sym == SDLK_F9 && g_Settings != nullptr)
+                {
+                    g_Settings->SaveBool(GameRunning_LimitFPS, !g_Settings->LoadBool(GameRunning_LimitFPS));
+                }
                 else if (event.key.keysym.sym == SDLK_F11)
                 {
                     fullscreen = !fullscreen;
                     SetFullscreen(window, fullscreen);
+                }
+                else if (event.key.keysym.sym == SDLK_F12 && g_Settings != nullptr &&
+                    g_Plugins != nullptr && g_Plugins->Gfx() != nullptr && g_Plugins->Gfx()->CaptureScreen != nullptr)
+                {
+                    const std::string screenshotDirectory = g_Settings->LoadStringVal(Directory_SnapShot);
+                    g_Plugins->Gfx()->CaptureScreen(screenshotDirectory.c_str());
                 }
             }
         }
