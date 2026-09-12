@@ -27,6 +27,7 @@ Thumbs.db
 /Bin/Release64
 /build
 /build-*/
+/CMakeFiles/
 /Config/Cheats-User
 /Config/Enhancements-User
 /Config/Project64.cache3
