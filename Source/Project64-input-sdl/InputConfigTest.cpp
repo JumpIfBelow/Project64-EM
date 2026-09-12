@@ -38,6 +38,7 @@ int main()
     expected.deadzone = 4321;
     expected.sensitivity = 97;
     expected.controllerGuid = "03000000123400005678000000000000";
+    expected.controllerPak = ControllerPak::Mempak;
 
     bool passed = Check(expected.Save(path.string()), "could not save input configuration");
     InputConfig actual;
@@ -54,6 +55,7 @@ int main()
     passed &= Check(actual.deadzone == expected.deadzone && actual.sensitivity == expected.sensitivity,
         "analog tuning did not round-trip");
     passed &= Check(actual.controllerGuid == expected.controllerGuid, "controller selection did not round-trip");
+    passed &= Check(actual.controllerPak == expected.controllerPak, "controller pak did not round-trip");
 
     {
         std::ofstream malformed(path, std::ios::trunc);
@@ -63,6 +65,7 @@ int main()
     defaults.Load(path.string());
     passed &= Check(defaults.analogX == SDL_CONTROLLER_AXIS_LEFTX &&
         defaults.analogY == SDL_CONTROLLER_AXIS_LEFTY, "invalid axes replaced safe defaults");
+    passed &= Check(defaults.controllerPak == ControllerPak::RumblePak, "rumble pak is not the default accessory");
 
     std::error_code error;
     std::filesystem::remove_all(directory, error);

@@ -221,6 +221,7 @@ bool InputConfig::Load(const std::string & path)
             else if (key == "deadzone") { deadzone = std::clamp(std::atoi(value.c_str()), 0, 32767); }
             else if (key == "sensitivity") { sensitivity = std::clamp(std::atoi(value.c_str()), 1, 127); }
             else if (key == "controller_guid") { controllerGuid = value; }
+            else if (key == "controller_pak") { controllerPak = ParseControllerPak(value); }
         }
     }
     return true;
@@ -254,6 +255,7 @@ bool InputConfig::Save(const std::string & path) const
     output << "deadzone=" << deadzone << '\n';
     output << "sensitivity=" << sensitivity << '\n';
     output << "controller_guid=" << controllerGuid << '\n';
+    output << "controller_pak=" << ControllerPakName(controllerPak) << '\n';
     output.close();
     if (!output)
     {
@@ -362,6 +364,25 @@ SDL_GameControllerAxis ParseAxis(const std::string & value)
     if (lowered == "triggerleft") { return SDL_CONTROLLER_AXIS_TRIGGERLEFT; }
     if (lowered == "triggerright") { return SDL_CONTROLLER_AXIS_TRIGGERRIGHT; }
     return SDL_CONTROLLER_AXIS_INVALID;
+}
+
+const char * ControllerPakName(ControllerPak controllerPak)
+{
+    switch (controllerPak)
+    {
+    case ControllerPak::NoPak: return "none";
+    case ControllerPak::Mempak: return "mempak";
+    case ControllerPak::RumblePak: return "rumble";
+    }
+    return "rumble";
+}
+
+ControllerPak ParseControllerPak(const std::string & value)
+{
+    const std::string lowered = Lower(Trim(value));
+    if (lowered == "none") { return ControllerPak::NoPak; }
+    if (lowered == "mempak" || lowered == "memory") { return ControllerPak::Mempak; }
+    return ControllerPak::RumblePak;
 }
 
 bool BindingPressed(SDL_GameController * controller, const GamepadBinding & binding, int threshold)

@@ -50,6 +50,11 @@ int ev_fullscreen = 0;
 extern int g_viewport_offset;
 extern int g_width, g_height;
 
+#if defined(PJ64_SDL_VIDEO)
+uint32_t g_LastDrawableWidth = 0;
+uint32_t g_LastDrawableHeight = 0;
+#endif
+
 #ifdef _WIN32
 HINSTANCE hinstDLL = nullptr;
 #endif
@@ -102,6 +107,13 @@ void ChangeSize()
     {
         g_width = drawableWidth;
         g_height = drawableHeight;
+        if (GfxInitDone &&
+            (drawableWidth != g_LastDrawableWidth || drawableHeight != g_LastDrawableHeight))
+        {
+            gfxResizeWindow(drawableWidth, drawableHeight);
+        }
+        g_LastDrawableWidth = drawableWidth;
+        g_LastDrawableHeight = drawableHeight;
     }
     else
     {

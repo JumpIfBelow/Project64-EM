@@ -64,6 +64,13 @@ struct GamepadBinding
     int value = 0;
 };
 
+enum class ControllerPak
+{
+    NoPak = 1,
+    Mempak = 2,
+    RumblePak = 3,
+};
+
 struct InputConfig
 {
     std::array<SDL_Scancode, static_cast<size_t>(KeyboardAction::Count)> keyboard;
@@ -75,6 +82,7 @@ struct InputConfig
     int deadzone = 8000;
     int sensitivity = 80;
     std::string controllerGuid;
+    ControllerPak controllerPak = ControllerPak::RumblePak;
 
     InputConfig();
     bool Load(const std::string & path);
@@ -88,5 +96,7 @@ std::string BindingValue(const GamepadBinding & binding);
 GamepadBinding ParseBinding(const std::string & value);
 std::string AxisName(SDL_GameControllerAxis axis);
 SDL_GameControllerAxis ParseAxis(const std::string & value);
+const char * ControllerPakName(ControllerPak controllerPak);
+ControllerPak ParseControllerPak(const std::string & value);
 bool BindingPressed(SDL_GameController * controller, const GamepadBinding & binding, int threshold = 16000);
 }

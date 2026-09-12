@@ -35,13 +35,19 @@ Open the launcher:
 ```
 
 Choose a locally generated ROM in the central panel, adjust settings if needed,
-and select `Start Game`. The application includes:
+and select `Start Emulation`. The application includes:
 
 - window, fullscreen and speed-limit settings;
 - aspect ratio, texture filtering, VSync and texture-pack settings;
 - audio output, enable/disable and volume settings;
-- editable keyboard bindings and SDL game-controller mappings;
+- editable keyboard bindings and direct SDL game-controller input capture;
+- selectable controller accessories, including Rumble Pak support and a rumble test;
 - optional save, state, screenshot and texture directories.
+
+To change a gamepad binding, open **Options → Input Settings**, click the N64
+control to change, then press a controller button or move an axis. Pressing
+**Save** applies keyboard and gamepad bindings to the running game immediately;
+restarting the ROM is not required.
 
 To bypass the launcher, pass a ROM directly:
 
@@ -55,9 +61,10 @@ To bypass the launcher, pass a ROM directly:
 
 The File, System, Options and Help menus remain accessible during emulation.
 They provide settings, save states, reset, pause, screenshots, speed limiting
-and fullscreen controls. F2 pauses or resumes, F5 saves state, F7 loads state,
-F8 performs a soft reset, F9 toggles the speed limit, F11 toggles fullscreen,
-F12 takes a screenshot, and Escape exits.
+and fullscreen controls. The embedded game surface follows live window resizing
+while preserving the selected aspect ratio. F2 pauses or resumes, F5 saves
+state, F7 loads state, F8 performs a soft reset, F9 toggles the speed limit,
+F11 toggles fullscreen, F12 takes a screenshot, and Escape exits.
 
 Frontend and input settings are stored in
 `$XDG_CONFIG_HOME/project64-em`, or `~/.config/project64-em` when

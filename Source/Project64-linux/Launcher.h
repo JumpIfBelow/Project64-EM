@@ -1,6 +1,7 @@
 #pragma once
 
 #include <csignal>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -25,18 +26,32 @@ enum class RuntimeCommand
     SaveState,
     LoadState,
     SoftReset,
+    HardReset,
     ToggleSpeedLimit,
     ToggleFullscreen,
     Screenshot,
     Settings,
+    VideoSettings,
+    AudioSettings,
+    InputSettings,
     Quit,
+};
+
+enum class SettingsPage
+{
+    General,
+    Video,
+    Audio,
+    Input,
+    Directories,
 };
 
 bool ShowSettings(
     LinuxConfig & config,
     pj64::input::InputConfig & input,
     const std::string & frontendConfigPath,
-    const std::string & inputConfigPath);
+    const std::string & inputConfigPath,
+    SettingsPage page = SettingsPage::General);
 
 class RuntimeWindow
 {
@@ -56,6 +71,7 @@ public:
     bool IsEmbedded() const;
     bool IsOpen() const;
     void ProcessEvents();
+    void GetDrawableSize(uint32_t & width, uint32_t & height) const;
     RuntimeCommand TakeCommand();
     void ToggleFullscreen();
     void SetPaused(bool paused);

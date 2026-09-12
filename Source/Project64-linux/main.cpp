@@ -135,10 +135,11 @@ private:
 class SdlRenderWindow final : public RenderWindow
 {
 public:
-    SdlRenderWindow(SDL_Window * window, SDL_GLContext context, bool vsync) :
+    SdlRenderWindow(SDL_Window * window, SDL_GLContext context, bool vsync, RuntimeWindow & frontend) :
         m_Window(window),
         m_Context(context),
-        m_Vsync(vsync)
+        m_Vsync(vsync),
+        m_Frontend(frontend)
     {
     }
 
@@ -168,6 +169,11 @@ public:
 
     void GetDrawableSize(uint32_t & width, uint32_t & height) const override
     {
+        m_Frontend.GetDrawableSize(width, height);
+        if (width > 0 && height > 0)
+        {
+            return;
+        }
         int drawableWidth = 0;
         int drawableHeight = 0;
         SDL_GL_GetDrawableSize(m_Window, &drawableWidth, &drawableHeight);
@@ -184,6 +190,7 @@ private:
     SDL_Window * m_Window;
     SDL_GLContext m_Context;
     bool m_Vsync;
+    RuntimeWindow & m_Frontend;
     std::atomic_bool m_ContextError{false};
 };
 
@@ -397,7 +404,7 @@ int main(int argc, char ** argv)
     config.ApplyEnvironment(inputConfigPath);
     config.ApplyProjectSettings(baseDirectory);
 
-    const uint32_t windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
+    const uint32_t windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI;
     SDL_Window * window = SDL_CreateWindow(
         "Project64-EM",
         SDL_WINDOWPOS_CENTERED,
@@ -430,7 +437,7 @@ int main(int argc, char ** argv)
     }
 
     LinuxNotification notification;
-    SdlRenderWindow renderWindow(window, context, config.vsync);
+    SdlRenderWindow renderWindow(window, context, config.vsync, *frontend);
 
     std::vector<char *> coreArguments;
     coreArguments.push_back(argv[0]);
@@ -509,7 +516,8 @@ int main(int argc, char ** argv)
             }
         }
 
-        switch (frontend->TakeCommand())
+        const RuntimeCommand runtimeCommand = frontend->TakeCommand();
+        switch (runtimeCommand)
         {
         case RuntimeCommand::PauseResume:
             if (g_BaseSystem != nullptr)
@@ -530,6 +538,10 @@ int main(int argc, char ** argv)
         case RuntimeCommand::SoftReset:
             if (g_BaseSystem != nullptr) g_BaseSystem->ExternalEvent(SysEvent_ResetCPU_Soft);
             frontend->SetStatus("Soft reset requested");
+            break;
+        case RuntimeCommand::HardReset:
+            if (g_BaseSystem != nullptr) g_BaseSystem->ExternalEvent(SysEvent_ResetCPU_Hard);
+            frontend->SetStatus("Hard reset requested");
             break;
         case RuntimeCommand::ToggleSpeedLimit:
             if (g_Settings != nullptr)
@@ -552,17 +564,28 @@ int main(int argc, char ** argv)
             }
             break;
         case RuntimeCommand::Settings:
+        case RuntimeCommand::VideoSettings:
+        case RuntimeCommand::AudioSettings:
+        case RuntimeCommand::InputSettings:
         {
             const bool wasPaused = g_Settings != nullptr && g_Settings->LoadBool(GameRunning_CPU_Paused);
             if (!wasPaused && g_BaseSystem != nullptr)
             {
                 g_BaseSystem->ExternalEvent(SysEvent_PauseCPU_FromMenu);
             }
-            if (ShowSettings(config, input, frontendConfigPath, inputConfigPath))
+            SettingsPage page = SettingsPage::General;
+            if (runtimeCommand == RuntimeCommand::VideoSettings) { page = SettingsPage::Video; }
+            else if (runtimeCommand == RuntimeCommand::AudioSettings) { page = SettingsPage::Audio; }
+            else if (runtimeCommand == RuntimeCommand::InputSettings) { page = SettingsPage::Input; }
+            if (ShowSettings(config, input, frontendConfigPath, inputConfigPath, page))
             {
                 config.ApplyProjectSettings(baseDirectory);
+                if (g_Plugins != nullptr && g_Plugins->Control() != nullptr)
+                {
+                    g_Plugins->Control()->PluginControllers()[0].Plugin = static_cast<int32_t>(input.controllerPak);
+                }
                 frontend->SetSpeedLimited(config.limitFps);
-                frontend->SetStatus("Settings saved; video, audio, and input changes apply after restart");
+                frontend->SetStatus("Settings saved; input changes are active without restarting");
             }
             if (!wasPaused && g_BaseSystem != nullptr)
             {

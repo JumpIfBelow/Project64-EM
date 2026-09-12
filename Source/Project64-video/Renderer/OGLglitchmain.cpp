@@ -430,6 +430,29 @@ void gfxClipWindow(uint32_t minx, uint32_t miny, uint32_t maxx, uint32_t maxy)
     grDisplayGLError("gfxClipWindow");
 }
 
+void gfxResizeWindow(uint32_t width, uint32_t height)
+{
+    if (width == 0 || height == 0)
+    {
+        return;
+    }
+    screen_width = static_cast<int>(width);
+    screen_height = static_cast<int>(height);
+    if (render_to_texture)
+    {
+        return;
+    }
+    g_width = screen_width;
+    g_height = screen_height;
+    widtho = g_width / 2;
+    heighto = g_height / 2;
+    glViewport(0, g_viewport_offset, g_width, g_height);
+    glScissor(0, g_viewport_offset, g_width, g_height);
+    viewport_width = g_width;
+    viewport_height = g_height;
+    nvidia_viewport_hack = 1;
+}
+
 void gfxColorMask(bool rgb, bool a)
 {
     WriteTrace(TraceGlitch, TraceDebug, "rgb = %d, a: %d", rgb, a);

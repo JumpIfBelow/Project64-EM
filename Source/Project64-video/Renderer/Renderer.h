@@ -9,6 +9,7 @@
 #include <Project64-video/Renderer/types.h>
 
 void gfxClipWindow(uint32_t minx, uint32_t miny, uint32_t maxx, uint32_t maxy);
+void gfxResizeWindow(uint32_t width, uint32_t height);
 void gfxColorMask(bool rgb, bool a);
 uint32_t gfxTexMinAddress(gfxChipID_t tmu);
 bool gfxSstWinClose();

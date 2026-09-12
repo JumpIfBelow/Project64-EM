@@ -3,9 +3,12 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
+#include <utility>
 
 #if defined(__GNUC__)
 #define EXPORT extern "C" __attribute__((visibility("default")))
@@ -17,7 +20,6 @@ enum
 {
     PLUGIN_TYPE_CONTROLLER = 4,
     PLUGIN_NONE = 1,
-    PLUGIN_MEMPAK = 2,
 };
 
 struct PLUGIN_INFO
@@ -79,6 +81,8 @@ using pj64::input::N64Button;
 
 InputConfig g_Config;
 SDL_GameController * g_Controller = nullptr;
+std::filesystem::file_time_type g_ConfigWriteTime{};
+std::chrono::steady_clock::time_point g_NextConfigCheck{};
 
 constexpr size_t ToIndex(N64Button button)
 {
@@ -97,6 +101,53 @@ void LoadConfig()
     if (configPath != nullptr && configPath[0] != '\0')
     {
         g_Config.Load(configPath);
+        std::error_code error;
+        g_ConfigWriteTime = std::filesystem::last_write_time(configPath, error);
+    }
+}
+
+void CloseController()
+{
+    if (g_Controller == nullptr)
+    {
+        return;
+    }
+    SDL_GameControllerRumble(g_Controller, 0, 0, 0);
+    SDL_GameControllerClose(g_Controller);
+    g_Controller = nullptr;
+}
+
+void ReloadConfigIfChanged()
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_NextConfigCheck)
+    {
+        return;
+    }
+    g_NextConfigCheck = now + std::chrono::milliseconds(250);
+
+    const char * configPath = std::getenv("PROJECT64_EM_INPUT_CONFIG");
+    if (configPath == nullptr || configPath[0] == '\0')
+    {
+        return;
+    }
+    std::error_code error;
+    const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(configPath, error);
+    if (error || writeTime == g_ConfigWriteTime)
+    {
+        return;
+    }
+    InputConfig updated;
+    if (!updated.Load(configPath))
+    {
+        return;
+    }
+    const bool controllerChanged = updated.controllerGuid != g_Config.controllerGuid;
+    g_Config = std::move(updated);
+    g_ConfigWriteTime = writeTime;
+    if (controllerChanged)
+    {
+        CloseController();
     }
 }
 
@@ -179,11 +230,7 @@ int8_t ScaleAxis(SDL_GameControllerAxis axis, bool invert)
 
 EXPORT void CloseDLL()
 {
-    if (g_Controller != nullptr)
-    {
-        SDL_GameControllerClose(g_Controller);
-        g_Controller = nullptr;
-    }
+    CloseController();
 }
 
 EXPORT void GetDllInfo(PLUGIN_INFO * info)
@@ -207,7 +254,7 @@ EXPORT void InitiateControllers(CONTROL_INFO info)
     {
         info.Controls[index].Present = index == 0 ? 1 : 0;
         info.Controls[index].RawData = 0;
-        info.Controls[index].Plugin = index == 0 ? PLUGIN_MEMPAK : PLUGIN_NONE;
+        info.Controls[index].Plugin = index == 0 ? static_cast<int32_t>(g_Config.controllerPak) : PLUGIN_NONE;
     }
 }
 
@@ -219,6 +266,7 @@ EXPORT void GetKeys(int control, BUTTONS * buttons)
         return;
     }
 
+    ReloadConfigIfChanged();
     const uint8_t * keys = SDL_GetKeyboardState(nullptr);
     OpenController();
     buttons->A_BUTTON = Pressed(keys, KeyboardAction::A) || GamepadPressed(N64Button::A);
@@ -251,6 +299,20 @@ EXPORT void GetKeys(int control, BUTTONS * buttons)
 
 EXPORT void ControllerCommand(int, uint8_t *) {}
 EXPORT void ReadController(int, uint8_t *) {}
+EXPORT void RumbleCommand(int32_t control, int32_t enabled)
+{
+    if (control != 0)
+    {
+        return;
+    }
+    OpenController();
+    if (g_Controller == nullptr || !SDL_GameControllerGetAttached(g_Controller))
+    {
+        return;
+    }
+    const Uint16 strength = enabled != 0 ? 0xFFFF : 0;
+    SDL_GameControllerRumble(g_Controller, strength, strength, enabled != 0 ? SDL_HAPTIC_INFINITY : 0);
+}
 EXPORT void RomOpen() {}
 EXPORT void RomClosed() {}
 EXPORT void WM_KeyDown(uint32_t, uint32_t) {}
