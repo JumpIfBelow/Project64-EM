@@ -2,36 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 find_package(OpenGL REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
-
-include(FetchContent)
-if(POLICY CMP0135)
-  cmake_policy(SET CMP0135 NEW)
-endif()
-FetchContent_Declare(
-  imgui
-  URL "https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9.tar.gz"
-  URL_HASH SHA256=af97ed649182c39314320514a672b82008ab462b9293fe23d37b30bfa5d05519
-)
-FetchContent_MakeAvailable(imgui)
-
-install(FILES "${imgui_SOURCE_DIR}/LICENSE.txt"
-  DESTINATION licenses
-  RENAME DearImGui-LICENSE.txt
-)
-
-add_library(Project64-linux-ui STATIC
-  "${imgui_SOURCE_DIR}/imgui.cpp"
-  "${imgui_SOURCE_DIR}/imgui_draw.cpp"
-  "${imgui_SOURCE_DIR}/imgui_tables.cpp"
-  "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
-  "${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp"
-  "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp"
-)
-target_include_directories(Project64-linux-ui PUBLIC
-  "${imgui_SOURCE_DIR}"
-  "${imgui_SOURCE_DIR}/backends"
-)
-target_link_libraries(Project64-linux-ui PRIVATE SDL2::SDL2 OpenGL::GL)
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 add_executable(project64-em
   main.cpp
@@ -52,7 +23,7 @@ target_link_libraries(project64-em PRIVATE
   ZLIB::ZLIB
   SDL2::SDL2
   OpenGL::GL
-  Project64-linux-ui
+  Qt6::Widgets
   ${CMAKE_DL_LIBS}
 )
 set_target_properties(project64-em PROPERTIES

@@ -3,305 +3,89 @@
 #include "LinuxConfig.h"
 #include <Project64-input-sdl/InputConfig.h>
 
-#include <imgui.h>
-#include <imgui_impl_opengl3.h>
-#include <imgui_impl_sdl2.h>
+#include <QAction>
+#include <QApplication>
+#include <QCheckBox>
+#include <QCloseEvent>
+#include <QComboBox>
+#include <QDialog>
+#include <QEventLoop>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QFrame>
+#include <QGuiApplication>
+#include <QGridLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMainWindow>
+#include <QMenu>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSpinBox>
+#include <QStatusBar>
+#include <QTabWidget>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QWindow>
 
-#include <SDL_opengl.h>
+#include <SDL.h>
+#include <SDL_syswm.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
+#include <functional>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
 namespace
 {
-constexpr size_t PathCapacity = 4096;
-
-enum class BrowserPurpose
+QString Text(const std::string & value)
 {
-    None,
-    Rom,
-    SaveDirectory,
-    StateDirectory,
-    ScreenshotDirectory,
-    TextureDirectory,
-};
-
-struct BrowserResult
-{
-    BrowserPurpose purpose = BrowserPurpose::None;
-    std::string path;
-};
-
-class FileBrowser
-{
-public:
-    void Open(BrowserPurpose purpose, const std::string & initialPath)
-    {
-        m_Purpose = purpose;
-        std::filesystem::path initial(initialPath);
-        std::error_code error;
-        if (purpose == BrowserPurpose::Rom && std::filesystem::is_regular_file(initial, error))
-        {
-            initial = initial.parent_path();
-        }
-        if (!std::filesystem::is_directory(initial, error))
-        {
-            const char * home = std::getenv("HOME");
-            initial = home != nullptr ? std::filesystem::path(home) : std::filesystem::current_path(error);
-        }
-        m_Current = initial;
-        m_Selected.clear();
-        Refresh();
-        m_OpenRequested = true;
-    }
-
-    BrowserResult Draw()
-    {
-        BrowserResult result;
-        if (m_OpenRequested)
-        {
-            ImGui::OpenPopup("Choose a file or directory");
-            m_OpenRequested = false;
-        }
-        ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f), ImGuiCond_Appearing);
-        if (!ImGui::BeginPopupModal("Choose a file or directory", nullptr, ImGuiWindowFlags_NoCollapse))
-        {
-            return result;
-        }
-
-        if (ImGui::Button("Home"))
-        {
-            const char * home = std::getenv("HOME");
-            if (home != nullptr)
-            {
-                m_Current = home;
-                m_Selected.clear();
-                Refresh();
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Up"))
-        {
-            const std::filesystem::path parent = m_Current.parent_path();
-            if (!parent.empty() && parent != m_Current)
-            {
-                m_Current = parent;
-                m_Selected.clear();
-                Refresh();
-            }
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted(m_Current.string().c_str());
-        if (!m_Error.empty())
-        {
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "%s", m_Error.c_str());
-        }
-
-        ImGui::BeginChild("Files", ImVec2(0.0f, -72.0f), ImGuiChildFlags_Borders);
-        for (const Entry & entry : m_Entries)
-        {
-            const std::string label = std::string(entry.directory ? "[DIR]  " : "       ") + entry.name;
-            const bool selected = m_Selected == entry.path;
-            if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
-            {
-                m_Selected = entry.path;
-                if (entry.directory && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                {
-                    m_Current = entry.path;
-                    m_Selected.clear();
-                    Refresh();
-                }
-                else if (!entry.directory && m_Purpose == BrowserPurpose::Rom && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                {
-                    result = {m_Purpose, entry.path.string()};
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-        }
-        ImGui::EndChild();
-
-        const bool directoryMode = m_Purpose != BrowserPurpose::Rom;
-        if (directoryMode)
-        {
-            if (ImGui::Button("Use this directory"))
-            {
-                std::error_code error;
-                const std::filesystem::path selected = std::filesystem::is_directory(m_Selected, error) ? m_Selected : m_Current;
-                result = {m_Purpose, selected.string()};
-                ImGui::CloseCurrentPopup();
-            }
-        }
-        else
-        {
-            std::error_code error;
-            const bool validFile = std::filesystem::is_regular_file(m_Selected, error);
-            if (!validFile)
-            {
-                ImGui::BeginDisabled();
-            }
-            if (ImGui::Button("Open"))
-            {
-                result = {m_Purpose, m_Selected.string()};
-                ImGui::CloseCurrentPopup();
-            }
-            if (!validFile)
-            {
-                ImGui::EndDisabled();
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel"))
-        {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-        return result;
-    }
-
-private:
-    struct Entry
-    {
-        std::filesystem::path path;
-        std::string name;
-        bool directory;
-    };
-
-    static bool IsRom(const std::filesystem::path & path)
-    {
-        std::string extension = path.extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) {
-            return static_cast<char>(std::tolower(character));
-        });
-        return extension == ".z64" || extension == ".n64" || extension == ".v64" ||
-            extension == ".zip" || extension == ".7z";
-    }
-
-    void Refresh()
-    {
-        m_Entries.clear();
-        m_Error.clear();
-        std::error_code error;
-        std::filesystem::directory_iterator iterator(
-            m_Current,
-            std::filesystem::directory_options::skip_permission_denied,
-            error);
-        if (error)
-        {
-            m_Error = error.message();
-            return;
-        }
-        for (const auto & item : iterator)
-        {
-            const bool directory = item.is_directory(error);
-            if (error)
-            {
-                error.clear();
-                continue;
-            }
-            if (!directory && m_Purpose == BrowserPurpose::Rom && !IsRom(item.path()))
-            {
-                continue;
-            }
-            if (!directory && m_Purpose != BrowserPurpose::Rom)
-            {
-                continue;
-            }
-            m_Entries.push_back({item.path(), item.path().filename().string(), directory});
-        }
-        std::sort(m_Entries.begin(), m_Entries.end(), [](const Entry & left, const Entry & right) {
-            if (left.directory != right.directory)
-            {
-                return left.directory > right.directory;
-            }
-            return left.name < right.name;
-        });
-    }
-
-    BrowserPurpose m_Purpose = BrowserPurpose::None;
-    bool m_OpenRequested = false;
-    std::filesystem::path m_Current;
-    std::filesystem::path m_Selected;
-    std::vector<Entry> m_Entries;
-    std::string m_Error;
-};
-
-template <size_t Size>
-void CopyText(std::array<char, Size> & destination, const std::string & value)
-{
-    std::snprintf(destination.data(), destination.size(), "%s", value.c_str());
+    return QString::fromUtf8(value.c_str());
 }
 
-void HelpMarker(const char * text)
+std::string Text(const QString & value)
 {
-    ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
-    if (ImGui::BeginItemTooltip())
-    {
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-        ImGui::TextUnformatted(text);
-        ImGui::PopTextWrapPos();
-        ImGui::EndTooltip();
-    }
+    return value.toUtf8().constData();
 }
 
-void AddUiFont(ImGuiIO & io)
+QWidget * Scrollable(QWidget * contents)
 {
-    static const std::array<const char *, 5> candidates = {{
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    }};
-    for (const char * candidate : candidates)
-    {
-        std::error_code error;
-        if (std::filesystem::is_regular_file(candidate, error) &&
-            io.Fonts->AddFontFromFileTTF(candidate, 16.0f) != nullptr)
-        {
-            return;
-        }
-    }
-    io.Fonts->AddFontDefault();
+    auto * scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidget(contents);
+    return scroll;
 }
 
-void PathSetting(
-    const char * label,
-    std::array<char, PathCapacity> & buffer,
-    BrowserPurpose purpose,
-    FileBrowser & browser)
+QComboBox * StringCombo(const std::vector<std::pair<const char *, int>> & values, int selected)
 {
-    ImGui::PushID(label);
-    ImGui::TextUnformatted(label);
-    ImGui::SetNextItemWidth(-84.0f);
-    ImGui::InputText("##path", buffer.data(), buffer.size());
-    ImGui::SameLine();
-    if (ImGui::Button("Browse"))
+    auto * combo = new QComboBox;
+    for (const auto & value : values)
     {
-        browser.Open(purpose, buffer.data());
+        combo->addItem(value.first, value.second);
     }
-    ImGui::PopID();
+    const int index = combo->findData(selected);
+    combo->setCurrentIndex(index >= 0 ? index : 0);
+    return combo;
 }
 
 struct BindingOption
 {
-    const char * label;
-    pj64::input::GamepadBinding value;
+    const char * name;
+    pj64::input::GamepadBinding binding;
 };
 
 const std::vector<BindingOption> & BindingOptions()
 {
     using Binding = pj64::input::GamepadBinding;
-    static const std::vector<BindingOption> options = {
+    static const std::vector<BindingOption> values = {
         {"None", {}},
         {"A", {Binding::Kind::Button, SDL_CONTROLLER_BUTTON_A}},
         {"B", {Binding::Kind::Button, SDL_CONTROLLER_BUTTON_B}},
@@ -329,7 +113,7 @@ const std::vector<BindingOption> & BindingOptions()
         {"Left trigger", {Binding::Kind::PositiveAxis, SDL_CONTROLLER_AXIS_TRIGGERLEFT}},
         {"Right trigger", {Binding::Kind::PositiveAxis, SDL_CONTROLLER_AXIS_TRIGGERRIGHT}},
     };
-    return options;
+    return values;
 }
 
 bool SameBinding(const pj64::input::GamepadBinding & left, const pj64::input::GamepadBinding & right)
@@ -337,437 +121,742 @@ bool SameBinding(const pj64::input::GamepadBinding & left, const pj64::input::Ga
     return left.kind == right.kind && left.value == right.value;
 }
 
-void DrawKeyboardSettings(pj64::input::InputConfig & input, int & captureIndex)
+class SettingsDialog final : public QDialog
 {
-    ImGui::TextWrapped("Click a binding, then press a key. Escape cancels capture. These keys control N64 controller port 1.");
-    if (ImGui::BeginTable("Keyboard", 4, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchSame))
+public:
+    SettingsDialog(
+        LinuxConfig & config,
+        pj64::input::InputConfig & input,
+        const std::string & frontendConfigPath,
+        const std::string & inputConfigPath) :
+        m_Config(config),
+        m_Input(input),
+        m_FrontendConfigPath(frontendConfigPath),
+        m_InputConfigPath(inputConfigPath)
     {
-        for (size_t index = 0; index < input.keyboard.size(); index++)
-        {
-            if ((index % 2) == 0)
-            {
-                ImGui::TableNextRow();
-            }
-            ImGui::TableSetColumnIndex(static_cast<int>((index % 2) * 2));
-            ImGui::TextUnformatted(pj64::input::KeyboardActionName(static_cast<pj64::input::KeyboardAction>(index)));
-            ImGui::TableSetColumnIndex(static_cast<int>((index % 2) * 2 + 1));
-            ImGui::PushID(static_cast<int>(index));
-            const std::string label = captureIndex == static_cast<int>(index)
-                ? "Press a key..."
-                : SDL_GetScancodeName(input.keyboard[index]);
-            if (ImGui::Button(label.empty() ? "Unassigned" : label.c_str(), ImVec2(-1.0f, 0.0f)))
-            {
-                captureIndex = static_cast<int>(index);
-            }
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-    }
-}
+        setWindowTitle("Project64-EM Settings");
+        setMinimumSize(760, 620);
+        resize(920, 700);
 
-void DrawGamepadSettings(pj64::input::InputConfig & input)
-{
-    std::vector<std::pair<std::string, std::string>> controllers;
-    for (int index = 0; index < SDL_NumJoysticks(); index++)
-    {
-        if (!SDL_IsGameController(index))
-        {
-            continue;
-        }
-        char guid[64] = {};
-        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(index), guid, sizeof(guid));
-        const char * name = SDL_GameControllerNameForIndex(index);
-        controllers.emplace_back(name == nullptr ? "Unnamed controller" : name, guid);
-    }
+        auto * layout = new QVBoxLayout(this);
+        auto * tabs = new QTabWidget;
+        tabs->addTab(BuildGeneralPage(), "General");
+        tabs->addTab(BuildVideoPage(), "Video");
+        tabs->addTab(BuildAudioPage(), "Audio");
+        tabs->addTab(BuildKeyboardPage(), "Keyboard");
+        tabs->addTab(BuildGamepadPage(), "Gamepad");
+        tabs->addTab(BuildDirectoriesPage(), "Directories");
+        layout->addWidget(tabs, 1);
 
-    const char * preview = "Any controller";
-    for (const auto & controller : controllers)
-    {
-        if (controller.second == input.controllerGuid)
-        {
-            preview = controller.first.c_str();
-            break;
-        }
-    }
-    if (ImGui::BeginCombo("Preferred controller", preview))
-    {
-        if (ImGui::Selectable("Any controller", input.controllerGuid.empty()))
-        {
-            input.controllerGuid.clear();
-        }
-        for (const auto & controller : controllers)
-        {
-            if (ImGui::Selectable(controller.first.c_str(), controller.second == input.controllerGuid))
-            {
-                input.controllerGuid = controller.second;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (controllers.empty())
-    {
-        ImGui::TextDisabled("No SDL game controller is currently connected.");
+        m_Status = new QLabel;
+        m_Status->setWordWrap(true);
+        layout->addWidget(m_Status);
+
+        auto * buttons = new QHBoxLayout;
+        buttons->addStretch();
+        auto * save = new QPushButton("Save");
+        save->setDefault(true);
+        connect(save, &QPushButton::clicked, this, [this]() { Save(); });
+        buttons->addWidget(save);
+        auto * cancel = new QPushButton("Cancel");
+        connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
+        buttons->addWidget(cancel);
+        layout->addLayout(buttons);
     }
 
-    const auto & options = BindingOptions();
-    if (ImGui::BeginTable("GamepadBindings", 4, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchSame))
+private:
+    QWidget * BuildGeneralPage()
     {
-        for (size_t index = 0; index < input.gamepad.size(); index++)
+        auto * page = new QWidget;
+        auto * form = new QFormLayout(page);
+        m_Fullscreen = new QCheckBox("Start in fullscreen");
+        m_Fullscreen->setChecked(m_Config.fullscreen);
+        form->addRow(m_Fullscreen);
+        m_WindowWidth = new QSpinBox;
+        m_WindowWidth->setRange(320, 7680);
+        m_WindowWidth->setValue(m_Config.windowWidth);
+        form->addRow("Window width", m_WindowWidth);
+        m_WindowHeight = new QSpinBox;
+        m_WindowHeight->setRange(240, 4320);
+        m_WindowHeight->setValue(m_Config.windowHeight);
+        form->addRow("Window height", m_WindowHeight);
+        m_LimitFps = new QCheckBox("Limit emulation speed");
+        m_LimitFps->setChecked(m_Config.limitFps);
+        form->addRow(m_LimitFps);
+        auto * help = new QLabel(
+            "Runtime controls are also available from the menu while a game is running. "
+            "Keyboard shortcuts: F2 pause, F5 save, F7 load, F8 reset, F9 speed limit, "
+            "F11 fullscreen, F12 screenshot, Escape exit.");
+        help->setWordWrap(true);
+        form->addRow(help);
+        return page;
+    }
+
+    QWidget * BuildVideoPage()
+    {
+        auto * page = new QWidget;
+        auto * form = new QFormLayout(page);
+        m_Vsync = new QCheckBox("Vertical synchronization");
+        m_Vsync->setChecked(m_Config.vsync);
+        form->addRow(m_Vsync);
+        m_Aspect = StringCombo({{"4:3", 0}, {"16:9", 1}, {"Stretch", 2}, {"Original", 3}}, m_Config.aspectRatio);
+        form->addRow("Aspect ratio", m_Aspect);
+        m_Filtering = StringCombo({{"Automatic", 0}, {"Force bilinear", 1}, {"Force point sampled", 2}}, m_Config.filtering);
+        form->addRow("N64 texture filtering", m_Filtering);
+        m_TextureFilter = StringCombo({
+            {"None", 0x00}, {"Smooth 1", 0x01}, {"Smooth 2", 0x02},
+            {"Smooth 3", 0x03}, {"Smooth 4", 0x04}, {"Sharp 1", 0x10}, {"Sharp 2", 0x20}},
+            m_Config.textureFilter);
+        form->addRow("Texture enhancement filter", m_TextureFilter);
+        m_HighResolutionTextures = new QCheckBox("Load high-resolution texture packs");
+        m_HighResolutionTextures->setChecked(m_Config.highResolutionTextures);
+        form->addRow(m_HighResolutionTextures);
+        m_AnisotropicFiltering = new QCheckBox("Anisotropic filtering");
+        m_AnisotropicFiltering->setChecked(m_Config.anisotropicFiltering);
+        form->addRow(m_AnisotropicFiltering);
+        auto * note = new QLabel("The bundled Project64 OpenGL video plugin is used on Linux.");
+        note->setWordWrap(true);
+        form->addRow(note);
+        return page;
+    }
+
+    QWidget * BuildAudioPage()
+    {
+        auto * page = new QWidget;
+        auto * form = new QFormLayout(page);
+        m_AudioEnabled = new QCheckBox("Enable audio");
+        m_AudioEnabled->setChecked(m_Config.audioEnabled);
+        form->addRow(m_AudioEnabled);
+        m_AudioVolume = new QSpinBox;
+        m_AudioVolume->setRange(0, 100);
+        m_AudioVolume->setSuffix("%");
+        m_AudioVolume->setValue(m_Config.audioVolume);
+        form->addRow("Volume", m_AudioVolume);
+        m_AudioDevice = new QComboBox;
+        m_AudioDevice->addItem("System default", QString());
+        for (int index = 0; index < SDL_GetNumAudioDevices(0); index++)
         {
-            if ((index % 2) == 0)
+            const char * name = SDL_GetAudioDeviceName(index, 0);
+            if (name != nullptr)
             {
-                ImGui::TableNextRow();
+                m_AudioDevice->addItem(name, name);
             }
-            ImGui::TableSetColumnIndex(static_cast<int>((index % 2) * 2));
-            ImGui::TextUnformatted(pj64::input::N64ButtonName(static_cast<pj64::input::N64Button>(index)));
-            ImGui::TableSetColumnIndex(static_cast<int>((index % 2) * 2 + 1));
-            ImGui::PushID(static_cast<int>(index));
-            const std::string currentName = pj64::input::BindingName(input.gamepad[index]);
-            if (ImGui::BeginCombo("##binding", currentName.c_str()))
+        }
+        const int selected = m_AudioDevice->findData(Text(m_Config.audioDevice));
+        m_AudioDevice->setCurrentIndex(selected >= 0 ? selected : 0);
+        form->addRow("Output device", m_AudioDevice);
+        return page;
+    }
+
+    QWidget * BuildKeyboardPage()
+    {
+        auto * contents = new QWidget;
+        auto * grid = new QGridLayout(contents);
+        for (size_t index = 0; index < m_Input.keyboard.size(); index++)
+        {
+            auto * combo = new QComboBox;
+            combo->addItem("Unassigned", SDL_SCANCODE_UNKNOWN);
+            for (int scanCode = 1; scanCode < SDL_NUM_SCANCODES; scanCode++)
             {
-                for (const auto & option : options)
+                const char * name = SDL_GetScancodeName(static_cast<SDL_Scancode>(scanCode));
+                if (name != nullptr && name[0] != '\0')
                 {
-                    const bool selected = SameBinding(option.value, input.gamepad[index]);
-                    if (ImGui::Selectable(option.label, selected))
+                    combo->addItem(name, scanCode);
+                }
+            }
+            const int selected = combo->findData(static_cast<int>(m_Input.keyboard[index]));
+            combo->setCurrentIndex(selected >= 0 ? selected : 0);
+            grid->addWidget(new QLabel(pj64::input::KeyboardActionName(static_cast<pj64::input::KeyboardAction>(index))), static_cast<int>(index), 0);
+            grid->addWidget(combo, static_cast<int>(index), 1);
+            m_Keyboard.push_back(combo);
+        }
+        auto * defaults = new QPushButton("Restore keyboard defaults");
+        connect(defaults, &QPushButton::clicked, this, [this]() {
+            const pj64::input::InputConfig defaults;
+            for (size_t index = 0; index < m_Keyboard.size(); index++)
+            {
+                m_Keyboard[index]->setCurrentIndex(m_Keyboard[index]->findData(static_cast<int>(defaults.keyboard[index])));
+            }
+        });
+        grid->addWidget(defaults, static_cast<int>(m_Input.keyboard.size()), 0, 1, 2);
+        grid->setColumnStretch(1, 1);
+        return Scrollable(contents);
+    }
+
+    QWidget * BuildGamepadPage()
+    {
+        auto * contents = new QWidget;
+        auto * form = new QFormLayout(contents);
+        m_Controller = new QComboBox;
+        m_Controller->addItem("Any controller", QString());
+        for (int index = 0; index < SDL_NumJoysticks(); index++)
+        {
+            if (!SDL_IsGameController(index))
+            {
+                continue;
+            }
+            char guid[64] = {};
+            SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(index), guid, sizeof(guid));
+            const char * name = SDL_GameControllerNameForIndex(index);
+            m_Controller->addItem(name != nullptr ? name : "Unnamed controller", QString::fromLatin1(guid));
+        }
+        const int controller = m_Controller->findData(Text(m_Input.controllerGuid));
+        m_Controller->setCurrentIndex(controller >= 0 ? controller : 0);
+        form->addRow("Preferred controller", m_Controller);
+
+        const auto & bindings = BindingOptions();
+        for (size_t index = 0; index < m_Input.gamepad.size(); index++)
+        {
+            auto * combo = new QComboBox;
+            int selected = 0;
+            for (size_t option = 0; option < bindings.size(); option++)
+            {
+                combo->addItem(bindings[option].name, static_cast<int>(option));
+                if (SameBinding(bindings[option].binding, m_Input.gamepad[index]))
+                {
+                    selected = static_cast<int>(option);
+                }
+            }
+            combo->setCurrentIndex(selected);
+            form->addRow(pj64::input::N64ButtonName(static_cast<pj64::input::N64Button>(index)), combo);
+            m_Gamepad.push_back(combo);
+        }
+
+        const std::vector<std::pair<const char *, int>> axes = {
+            {"Left X", SDL_CONTROLLER_AXIS_LEFTX}, {"Left Y", SDL_CONTROLLER_AXIS_LEFTY},
+            {"Right X", SDL_CONTROLLER_AXIS_RIGHTX}, {"Right Y", SDL_CONTROLLER_AXIS_RIGHTY}};
+        m_AnalogX = StringCombo(axes, m_Input.analogX);
+        m_AnalogY = StringCombo(axes, m_Input.analogY);
+        form->addRow("Analog X axis", m_AnalogX);
+        form->addRow("Analog Y axis", m_AnalogY);
+        m_InvertAnalogX = new QCheckBox("Invert analog X");
+        m_InvertAnalogX->setChecked(m_Input.invertAnalogX);
+        form->addRow(m_InvertAnalogX);
+        m_InvertAnalogY = new QCheckBox("Invert analog Y");
+        m_InvertAnalogY->setChecked(m_Input.invertAnalogY);
+        form->addRow(m_InvertAnalogY);
+        m_Deadzone = new QSpinBox;
+        m_Deadzone->setRange(0, 20000);
+        m_Deadzone->setValue(m_Input.deadzone);
+        form->addRow("Deadzone", m_Deadzone);
+        m_Sensitivity = new QSpinBox;
+        m_Sensitivity->setRange(1, 127);
+        m_Sensitivity->setValue(m_Input.sensitivity);
+        form->addRow("Analog sensitivity", m_Sensitivity);
+        auto * defaults = new QPushButton("Restore gamepad defaults");
+        connect(defaults, &QPushButton::clicked, this, [this]() {
+            const pj64::input::InputConfig defaults;
+            const auto & bindings = BindingOptions();
+            for (size_t index = 0; index < m_Gamepad.size(); index++)
+            {
+                for (size_t option = 0; option < bindings.size(); option++)
+                {
+                    if (SameBinding(bindings[option].binding, defaults.gamepad[index]))
                     {
-                        input.gamepad[index] = option.value;
+                        m_Gamepad[index]->setCurrentIndex(static_cast<int>(option));
+                        break;
                     }
                 }
-                ImGui::EndCombo();
             }
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
+            m_AnalogX->setCurrentIndex(m_AnalogX->findData(defaults.analogX));
+            m_AnalogY->setCurrentIndex(m_AnalogY->findData(defaults.analogY));
+            m_InvertAnalogX->setChecked(defaults.invertAnalogX);
+            m_InvertAnalogY->setChecked(defaults.invertAnalogY);
+            m_Deadzone->setValue(defaults.deadzone);
+            m_Sensitivity->setValue(defaults.sensitivity);
+        });
+        form->addRow(defaults);
+        return Scrollable(contents);
     }
 
-    static const std::array<std::pair<const char *, SDL_GameControllerAxis>, 4> stickAxes = {{
-        {"Left X", SDL_CONTROLLER_AXIS_LEFTX}, {"Left Y", SDL_CONTROLLER_AXIS_LEFTY},
-        {"Right X", SDL_CONTROLLER_AXIS_RIGHTX}, {"Right Y", SDL_CONTROLLER_AXIS_RIGHTY},
-    }};
-    auto axisCombo = [&](const char * label, SDL_GameControllerAxis & axis) {
-        const std::string current = pj64::input::AxisName(axis);
-        if (ImGui::BeginCombo(label, current.c_str()))
-        {
-            for (const auto & item : stickAxes)
-            {
-                if (ImGui::Selectable(item.first, item.second == axis))
-                {
-                    axis = item.second;
-                }
-            }
-            ImGui::EndCombo();
-        }
-    };
-    axisCombo("Analog X axis", input.analogX);
-    axisCombo("Analog Y axis", input.analogY);
-    ImGui::Checkbox("Invert analog X", &input.invertAnalogX);
-    ImGui::SameLine();
-    ImGui::Checkbox("Invert analog Y", &input.invertAnalogY);
-    ImGui::SliderInt("Deadzone", &input.deadzone, 0, 20000);
-    ImGui::SliderInt("Analog sensitivity", &input.sensitivity, 1, 127);
-}
-
-void ApplyBrowserResult(
-    const BrowserResult & result,
-    std::array<char, PathCapacity> & rom,
-    std::array<char, PathCapacity> & save,
-    std::array<char, PathCapacity> & state,
-    std::array<char, PathCapacity> & screenshot,
-    std::array<char, PathCapacity> & texture)
-{
-    switch (result.purpose)
+    QWidget * DirectoryRow(QLineEdit *& edit, const std::string & value)
     {
-    case BrowserPurpose::Rom: CopyText(rom, result.path); break;
-    case BrowserPurpose::SaveDirectory: CopyText(save, result.path); break;
-    case BrowserPurpose::StateDirectory: CopyText(state, result.path); break;
-    case BrowserPurpose::ScreenshotDirectory: CopyText(screenshot, result.path); break;
-    case BrowserPurpose::TextureDirectory: CopyText(texture, result.path); break;
-    default: break;
+        auto * row = new QWidget;
+        auto * layout = new QHBoxLayout(row);
+        layout->setContentsMargins(0, 0, 0, 0);
+        edit = new QLineEdit(Text(value));
+        layout->addWidget(edit, 1);
+        auto * browse = new QPushButton("Browse…");
+        layout->addWidget(browse);
+        connect(browse, &QPushButton::clicked, this, [this, edit]() {
+            const QString path = QFileDialog::getExistingDirectory(this, "Choose directory", edit->text());
+            if (!path.isEmpty())
+            {
+                edit->setText(path);
+            }
+        });
+        return row;
     }
-}
+
+    QWidget * BuildDirectoriesPage()
+    {
+        auto * page = new QWidget;
+        auto * form = new QFormLayout(page);
+        auto * note = new QLabel("Leave a directory empty to use the portable folder beside the executable.");
+        note->setWordWrap(true);
+        form->addRow(note);
+        form->addRow("Native saves", DirectoryRow(m_SaveDirectory, m_Config.saveDirectory));
+        form->addRow("Save states", DirectoryRow(m_StateDirectory, m_Config.stateDirectory));
+        form->addRow("Screenshots", DirectoryRow(m_ScreenshotDirectory, m_Config.screenshotDirectory));
+        form->addRow("Texture packs", DirectoryRow(m_TextureDirectory, m_Config.textureDirectory));
+        return page;
+    }
+
+    void Apply()
+    {
+        m_Config.fullscreen = m_Fullscreen->isChecked();
+        m_Config.windowWidth = m_WindowWidth->value();
+        m_Config.windowHeight = m_WindowHeight->value();
+        m_Config.limitFps = m_LimitFps->isChecked();
+        m_Config.vsync = m_Vsync->isChecked();
+        m_Config.aspectRatio = m_Aspect->currentData().toInt();
+        m_Config.filtering = m_Filtering->currentData().toInt();
+        m_Config.textureFilter = m_TextureFilter->currentData().toInt();
+        m_Config.highResolutionTextures = m_HighResolutionTextures->isChecked();
+        m_Config.anisotropicFiltering = m_AnisotropicFiltering->isChecked();
+        m_Config.audioEnabled = m_AudioEnabled->isChecked();
+        m_Config.audioVolume = m_AudioVolume->value();
+        m_Config.audioDevice = Text(m_AudioDevice->currentData().toString());
+        m_Config.saveDirectory = Text(m_SaveDirectory->text());
+        m_Config.stateDirectory = Text(m_StateDirectory->text());
+        m_Config.screenshotDirectory = Text(m_ScreenshotDirectory->text());
+        m_Config.textureDirectory = Text(m_TextureDirectory->text());
+        for (size_t index = 0; index < m_Keyboard.size(); index++)
+        {
+            m_Input.keyboard[index] = static_cast<SDL_Scancode>(m_Keyboard[index]->currentData().toInt());
+        }
+        const auto & bindings = BindingOptions();
+        for (size_t index = 0; index < m_Gamepad.size(); index++)
+        {
+            m_Input.gamepad[index] = bindings[static_cast<size_t>(m_Gamepad[index]->currentData().toInt())].binding;
+        }
+        m_Input.controllerGuid = Text(m_Controller->currentData().toString());
+        m_Input.analogX = static_cast<SDL_GameControllerAxis>(m_AnalogX->currentData().toInt());
+        m_Input.analogY = static_cast<SDL_GameControllerAxis>(m_AnalogY->currentData().toInt());
+        m_Input.invertAnalogX = m_InvertAnalogX->isChecked();
+        m_Input.invertAnalogY = m_InvertAnalogY->isChecked();
+        m_Input.deadzone = m_Deadzone->value();
+        m_Input.sensitivity = m_Sensitivity->value();
+    }
+
+    void Save()
+    {
+        Apply();
+        if (!m_Config.Save(m_FrontendConfigPath) || !m_Input.Save(m_InputConfigPath))
+        {
+            m_Status->setText("Unable to save one or more configuration files.");
+            return;
+        }
+        accept();
+    }
+
+    LinuxConfig & m_Config;
+    pj64::input::InputConfig & m_Input;
+    std::string m_FrontendConfigPath;
+    std::string m_InputConfigPath;
+    QCheckBox * m_Fullscreen = nullptr;
+    QSpinBox * m_WindowWidth = nullptr;
+    QSpinBox * m_WindowHeight = nullptr;
+    QCheckBox * m_LimitFps = nullptr;
+    QCheckBox * m_Vsync = nullptr;
+    QComboBox * m_Aspect = nullptr;
+    QComboBox * m_Filtering = nullptr;
+    QComboBox * m_TextureFilter = nullptr;
+    QCheckBox * m_HighResolutionTextures = nullptr;
+    QCheckBox * m_AnisotropicFiltering = nullptr;
+    QCheckBox * m_AudioEnabled = nullptr;
+    QSpinBox * m_AudioVolume = nullptr;
+    QComboBox * m_AudioDevice = nullptr;
+    std::vector<QComboBox *> m_Keyboard;
+    QComboBox * m_Controller = nullptr;
+    std::vector<QComboBox *> m_Gamepad;
+    QComboBox * m_AnalogX = nullptr;
+    QComboBox * m_AnalogY = nullptr;
+    QCheckBox * m_InvertAnalogX = nullptr;
+    QCheckBox * m_InvertAnalogY = nullptr;
+    QSpinBox * m_Deadzone = nullptr;
+    QSpinBox * m_Sensitivity = nullptr;
+    QLineEdit * m_SaveDirectory = nullptr;
+    QLineEdit * m_StateDirectory = nullptr;
+    QLineEdit * m_ScreenshotDirectory = nullptr;
+    QLineEdit * m_TextureDirectory = nullptr;
+    QLabel * m_Status = nullptr;
+};
+
+class EmulatorMainWindow final : public QMainWindow
+{
+public:
+    std::function<void()> closeRequested;
+
+protected:
+    void closeEvent(QCloseEvent * event) override
+    {
+        if (closeRequested)
+        {
+            closeRequested();
+        }
+        event->accept();
+    }
+};
 }
 
-LauncherResult RunLauncher(
-    SDL_Window * window,
-    SDL_GLContext context,
+bool ShowSettings(
     LinuxConfig & config,
     pj64::input::InputConfig & input,
     const std::string & frontendConfigPath,
-    const std::string & inputConfigPath,
-    volatile std::sig_atomic_t * stopSignal)
+    const std::string & inputConfigPath)
 {
-    SDL_SetWindowTitle(window, "Project64-EM for Linux");
-    SDL_SetWindowSize(window, 960, 700);
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-    SDL_GL_MakeCurrent(window, context);
-    SDL_GL_SetSwapInterval(1);
+    SettingsDialog dialog(config, input, frontendConfigPath, inputConfigPath);
+    return dialog.exec() == QDialog::Accepted;
+}
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO & io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-    AddUiFont(io);
-    const std::string imguiConfigPath = (std::filesystem::path(frontendConfigPath).parent_path() / "LinuxFrontendLayout.ini").string();
-    io.IniFilename = imguiConfigPath.c_str();
-    ImGui::StyleColorsDark();
-    ImGuiStyle & style = ImGui::GetStyle();
-    style.ScaleAllSizes(1.08f);
-    style.WindowRounding = 8.0f;
-    style.FrameRounding = 4.0f;
-    style.Colors[ImGuiCol_Button] = ImVec4(0.20f, 0.42f, 0.64f, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.52f, 0.77f, 1.0f);
-
-    ImGui_ImplSDL2_InitForOpenGL(window, context);
-    ImGui_ImplOpenGL3_Init("#version 130");
-
-    std::array<char, PathCapacity> rom = {};
-    std::array<char, PathCapacity> save = {};
-    std::array<char, PathCapacity> state = {};
-    std::array<char, PathCapacity> screenshot = {};
-    std::array<char, PathCapacity> texture = {};
-    CopyText(rom, config.lastRom);
-    CopyText(save, config.saveDirectory);
-    CopyText(state, config.stateDirectory);
-    CopyText(screenshot, config.screenshotDirectory);
-    CopyText(texture, config.textureDirectory);
-
-    FileBrowser browser;
-    std::string status;
-    int captureIndex = -1;
-    bool running = true;
-    LauncherResult result = LauncherResult::Quit;
-    while (running)
+struct RuntimeWindow::Implementation
+{
+    Implementation(
+        LinuxConfig & frontendConfig,
+        pj64::input::InputConfig & controllerConfig,
+        std::string frontendPath,
+        std::string inputPath) :
+        config(frontendConfig),
+        input(controllerConfig),
+        frontendConfigPath(std::move(frontendPath)),
+        inputConfigPath(std::move(inputPath))
     {
-        if (stopSignal != nullptr && *stopSignal != 0)
-        {
-            running = false;
-        }
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
+        window.setWindowTitle("Project64-EM");
+        window.setMinimumSize(320, 240);
+        window.closeRequested = [this]() {
+            open = false;
+            if (attached)
             {
-                running = false;
+                command = RuntimeCommand::Quit;
             }
-            else if (captureIndex >= 0 && event.type == SDL_KEYDOWN && !event.key.repeat)
+            if (launcherFinished)
             {
-                if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE)
-                {
-                    captureIndex = -1;
-                }
-                else
-                {
-                    input.keyboard[static_cast<size_t>(captureIndex)] = event.key.keysym.scancode;
-                    captureIndex = -1;
-                }
+                launcherFinished();
             }
-            else if (event.type == SDL_KEYDOWN && event.key.keysym.scancode == SDL_SCANCODE_ESCAPE)
-            {
-                running = false;
-            }
-        }
+        };
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-        ImGui::SetNextWindowSize(io.DisplaySize);
-        ImGui::Begin("Project64-EM", nullptr,
-            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+        auto addRuntimeCommand = [this](QMenu * menu, const char * label, RuntimeCommand value) {
+            QAction * action = menu->addAction(label);
+            QObject::connect(action, &QAction::triggered, &window, [this, value]() { command = value; });
+            action->setEnabled(false);
+            runtimeActions.push_back(action);
+            return action;
+        };
 
-        ImGui::Text("Project64-EM");
-        ImGui::SameLine();
-        ImGui::TextDisabled("Linux frontend - OoTMM multiplayer client r4");
-        ImGui::Separator();
-        ImGui::TextUnformatted("ROM");
-        ImGui::SetNextItemWidth(-84.0f);
-        ImGui::InputText("##rom", rom.data(), rom.size());
-        ImGui::SameLine();
-        if (ImGui::Button("Browse##rom"))
-        {
-            browser.Open(BrowserPurpose::Rom, rom.data());
-        }
+        QMenu * file = window.menuBar()->addMenu("&File");
+        openAction = file->addAction("Open ROM…");
+        QObject::connect(openAction, &QAction::triggered, &window, [this]() { ChooseRom(); });
+        startAction = file->addAction("Start Game");
+        QObject::connect(startAction, &QAction::triggered, &window, [this]() { FinishLaunch(); });
+        file->addSeparator();
+        QAction * quitAction = file->addAction("Quit");
+        QObject::connect(quitAction, &QAction::triggered, &window, [this]() {
+            open = false;
+            if (attached)
+            {
+                command = RuntimeCommand::Quit;
+            }
+            if (launcherFinished)
+            {
+                launcherFinished();
+            }
+        });
 
-        if (!config.recentRoms.empty() && ImGui::BeginCombo("Recent ROMs", "Select a recent ROM"))
-        {
-            for (const std::string & recent : config.recentRoms)
-            {
-                if (ImGui::Selectable(recent.c_str()))
-                {
-                    CopyText(rom, recent);
-                }
-            }
-            ImGui::EndCombo();
-        }
+        QMenu * system = window.menuBar()->addMenu("&System");
+        addRuntimeCommand(system, "Soft Reset", RuntimeCommand::SoftReset);
+        pauseAction = addRuntimeCommand(system, "Pause", RuntimeCommand::PauseResume);
+        addRuntimeCommand(system, "Take Screenshot", RuntimeCommand::Screenshot);
+        system->addSeparator();
+        speedAction = addRuntimeCommand(system, "Disable Speed Limit", RuntimeCommand::ToggleSpeedLimit);
+        system->addSeparator();
+        addRuntimeCommand(system, "Save State", RuntimeCommand::SaveState);
+        addRuntimeCommand(system, "Load State", RuntimeCommand::LoadState);
 
-        if (ImGui::BeginTabBar("Settings"))
-        {
-            if (ImGui::BeginTabItem("General"))
+        QMenu * options = window.menuBar()->addMenu("&Options");
+        addRuntimeCommand(options, "Toggle Fullscreen", RuntimeCommand::ToggleFullscreen);
+        options->addSeparator();
+        QAction * settingsAction = options->addAction("Settings…");
+        QObject::connect(settingsAction, &QAction::triggered, &window, [this]() {
+            if (attached)
             {
-                ImGui::Checkbox("Start in fullscreen", &config.fullscreen);
-                ImGui::SetNextItemWidth(180.0f);
-                ImGui::InputInt("Window width", &config.windowWidth, 16, 160);
-                ImGui::SetNextItemWidth(180.0f);
-                ImGui::InputInt("Window height", &config.windowHeight, 16, 120);
-                config.windowWidth = std::clamp(config.windowWidth, 320, 7680);
-                config.windowHeight = std::clamp(config.windowHeight, 240, 4320);
-                ImGui::Checkbox("Limit emulation speed", &config.limitFps);
-                HelpMarker("Disabling this runs the emulator as fast as the interpreter and graphics plugin allow.");
-                ImGui::Spacing();
-                ImGui::TextWrapped("Runtime: F2 pause/resume, F5 save state, F7 load state, F8 soft reset, F9 speed limit, F11 fullscreen, F12 screenshot, Escape exit.");
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Video"))
-            {
-                static const char * aspects[] = {"4:3", "16:9", "Stretch", "Original"};
-                static const char * filtering[] = {"Automatic", "Force bilinear", "Force point sampled"};
-                static const std::array<std::pair<const char *, int>, 7> textureFilters = {{
-                    {"None", 0x00}, {"Smooth 1", 0x01}, {"Smooth 2", 0x02},
-                    {"Smooth 3", 0x03}, {"Smooth 4", 0x04}, {"Sharp 1", 0x10}, {"Sharp 2", 0x20},
-                }};
-                ImGui::Checkbox("Vertical synchronization", &config.vsync);
-                ImGui::Combo("Aspect ratio", &config.aspectRatio, aspects, IM_ARRAYSIZE(aspects));
-                ImGui::Combo("N64 texture filtering", &config.filtering, filtering, IM_ARRAYSIZE(filtering));
-                const char * texturePreview = "None";
-                for (const auto & item : textureFilters) { if (item.second == config.textureFilter) { texturePreview = item.first; } }
-                if (ImGui::BeginCombo("Texture enhancement filter", texturePreview))
-                {
-                    for (const auto & item : textureFilters)
-                    {
-                        if (ImGui::Selectable(item.first, item.second == config.textureFilter)) { config.textureFilter = item.second; }
-                    }
-                    ImGui::EndCombo();
-                }
-                ImGui::Checkbox("Load high-resolution texture packs", &config.highResolutionTextures);
-                ImGui::Checkbox("Anisotropic filtering", &config.anisotropicFiltering);
-                ImGui::TextDisabled("The bundled Glide64/OpenGL plugin remains selected for Linux compatibility.");
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Audio"))
-            {
-                ImGui::Checkbox("Enable audio", &config.audioEnabled);
-                ImGui::SliderInt("Volume", &config.audioVolume, 0, 100, "%d%%");
-                const char * audioPreview = config.audioDevice.empty() ? "System default" : config.audioDevice.c_str();
-                if (ImGui::BeginCombo("Output device", audioPreview))
-                {
-                    if (ImGui::Selectable("System default", config.audioDevice.empty())) { config.audioDevice.clear(); }
-                    for (int index = 0; index < SDL_GetNumAudioDevices(0); index++)
-                    {
-                        const char * device = SDL_GetAudioDeviceName(index, 0);
-                        if (device != nullptr && ImGui::Selectable(device, config.audioDevice == device)) { config.audioDevice = device; }
-                    }
-                    ImGui::EndCombo();
-                }
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Keyboard"))
-            {
-                DrawKeyboardSettings(input, captureIndex);
-                if (ImGui::Button("Restore keyboard defaults"))
-                {
-                    const pj64::input::InputConfig defaults;
-                    input.keyboard = defaults.keyboard;
-                }
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Gamepad"))
-            {
-                DrawGamepadSettings(input);
-                if (ImGui::Button("Restore gamepad defaults"))
-                {
-                    const pj64::input::InputConfig defaults;
-                    input.gamepad = defaults.gamepad;
-                    input.analogX = defaults.analogX;
-                    input.analogY = defaults.analogY;
-                    input.invertAnalogX = defaults.invertAnalogX;
-                    input.invertAnalogY = defaults.invertAnalogY;
-                    input.deadzone = defaults.deadzone;
-                    input.sensitivity = defaults.sensitivity;
-                }
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Directories"))
-            {
-                ImGui::TextWrapped("Leave a directory empty to use the portable folders beside the executable.");
-                PathSetting("Native saves", save, BrowserPurpose::SaveDirectory, browser);
-                PathSetting("Save states", state, BrowserPurpose::StateDirectory, browser);
-                PathSetting("Screenshots", screenshot, BrowserPurpose::ScreenshotDirectory, browser);
-                PathSetting("Texture packs", texture, BrowserPurpose::TextureDirectory, browser);
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
-        }
-
-        const BrowserResult browserResult = browser.Draw();
-        if (browserResult.purpose != BrowserPurpose::None)
-        {
-            ApplyBrowserResult(browserResult, rom, save, state, screenshot, texture);
-        }
-
-        config.saveDirectory = save.data();
-        config.stateDirectory = state.data();
-        config.screenshotDirectory = screenshot.data();
-        config.textureDirectory = texture.data();
-        std::error_code pathError;
-        const bool validRom = std::filesystem::is_regular_file(rom.data(), pathError);
-        if (!status.empty())
-        {
-            ImGui::TextWrapped("%s", status.c_str());
-        }
-        if (!validRom)
-        {
-            ImGui::BeginDisabled();
-        }
-        if (ImGui::Button("Launch ROM", ImVec2(150.0f, 36.0f)))
-        {
-            config.AddRecentRom(rom.data());
-            const bool frontendSaved = config.Save(frontendConfigPath);
-            const bool inputSaved = input.Save(inputConfigPath);
-            if (frontendSaved && inputSaved)
-            {
-                result = LauncherResult::Launch;
-                running = false;
+                command = RuntimeCommand::Settings;
             }
             else
             {
-                status = "Unable to save one or more configuration files.";
+                ShowSettings(config, input, frontendConfigPath, inputConfigPath);
             }
-        }
-        if (!validRom)
-        {
-            ImGui::EndDisabled();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Save settings", ImVec2(150.0f, 36.0f)))
-        {
-            config.lastRom = rom.data();
-            status = config.Save(frontendConfigPath) && input.Save(inputConfigPath)
-                ? "Settings saved."
-                : "Unable to save one or more configuration files.";
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Quit", ImVec2(100.0f, 36.0f)))
-        {
-            running = false;
-        }
-        ImGui::End();
+        });
 
-        ImGui::Render();
-        int displayWidth = 0;
-        int displayHeight = 0;
-        SDL_GL_GetDrawableSize(window, &displayWidth, &displayHeight);
-        glViewport(0, 0, displayWidth, displayHeight);
-        glClearColor(0.055f, 0.067f, 0.09f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(window);
+        QMenu * help = window.menuBar()->addMenu("&Help");
+        QAction * aboutAction = help->addAction("About Project64-EM");
+        QObject::connect(aboutAction, &QAction::triggered, &window, [this]() {
+            QMessageBox::about(
+                &window,
+                "About Project64-EM",
+                "Project64-EM for OoTMM multiplayer\n\nLinux Qt frontend · OoTMM client release r4");
+        });
+
+        BuildHome();
+        window.resize(900, 620);
+        window.show();
     }
 
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-    SDL_SetWindowTitle(window, "Project64-EM");
+    void BuildHome()
+    {
+        auto * home = new QWidget;
+        auto * layout = new QVBoxLayout(home);
+        layout->setContentsMargins(48, 36, 48, 36);
+        auto * heading = new QLabel("<h1>Project64-EM</h1><p>Open an OoTMM ROM to begin.</p>");
+        heading->setTextFormat(Qt::RichText);
+        layout->addWidget(heading);
+
+        auto * romGroup = new QGroupBox("Game");
+        auto * romLayout = new QVBoxLayout(romGroup);
+        auto * romRow = new QHBoxLayout;
+        romEdit = new QLineEdit(Text(config.lastRom));
+        romEdit->setPlaceholderText("Choose a .z64, .n64, .v64, .zip, or .7z file");
+        romRow->addWidget(romEdit, 1);
+        auto * browse = new QPushButton("Browse…");
+        QObject::connect(browse, &QPushButton::clicked, &window, [this]() { ChooseRom(); });
+        romRow->addWidget(browse);
+        romLayout->addLayout(romRow);
+
+        if (!config.recentRoms.empty())
+        {
+            auto * recent = new QComboBox;
+            recent->addItem("Recent games");
+            for (const std::string & path : config.recentRoms)
+            {
+                recent->addItem(Text(std::filesystem::path(path).filename().string()), Text(path));
+            }
+            QObject::connect(recent, &QComboBox::currentIndexChanged, &window, [this, recent](int index) {
+                if (index > 0)
+                {
+                    romEdit->setText(recent->itemData(index).toString());
+                }
+            });
+            romLayout->addWidget(recent);
+        }
+
+        auto * start = new QPushButton("Start Game");
+        start->setDefault(true);
+        start->setMinimumHeight(38);
+        QObject::connect(start, &QPushButton::clicked, &window, [this]() { FinishLaunch(); });
+        romLayout->addWidget(start);
+        layout->addWidget(romGroup);
+        layout->addStretch();
+
+        auto * note = new QLabel(
+            "The emulator exposes its multiplayer IPC socket automatically. "
+            "Start the OoTMM multiclient r4 after the game is running.");
+        note->setWordWrap(true);
+        layout->addWidget(note);
+        window.setCentralWidget(home);
+        window.statusBar()->showMessage("Ready");
+    }
+
+    void ChooseRom()
+    {
+        const QString current = romEdit != nullptr ? romEdit->text() : Text(config.lastRom);
+        const QString path = QFileDialog::getOpenFileName(
+            &window,
+            "Open ROM",
+            current,
+            "Nintendo 64 ROMs (*.z64 *.n64 *.v64 *.zip *.7z);;All files (*)");
+        if (!path.isEmpty() && romEdit != nullptr)
+        {
+            romEdit->setText(path);
+        }
+    }
+
+    void FinishLaunch()
+    {
+        if (romEdit == nullptr)
+        {
+            return;
+        }
+        const std::string path = Text(romEdit->text());
+        if (!std::filesystem::is_regular_file(path))
+        {
+            window.statusBar()->showMessage("Choose an existing ROM before starting", 5000);
+            return;
+        }
+        config.AddRecentRom(path);
+        if (!config.Save(frontendConfigPath) || !input.Save(inputConfigPath))
+        {
+            window.statusBar()->showMessage("Unable to save one or more configuration files", 5000);
+            return;
+        }
+        launchAccepted = true;
+        if (launcherFinished)
+        {
+            launcherFinished();
+        }
+    }
+
+    LinuxConfig & config;
+    pj64::input::InputConfig & input;
+    std::string frontendConfigPath;
+    std::string inputConfigPath;
+    SDL_Window * sdlWindow = nullptr;
+    EmulatorMainWindow window;
+    QWindow * foreignWindow = nullptr;
+    QWidget * container = nullptr;
+    QLineEdit * romEdit = nullptr;
+    QAction * openAction = nullptr;
+    QAction * startAction = nullptr;
+    QAction * pauseAction = nullptr;
+    QAction * speedAction = nullptr;
+    std::vector<QAction *> runtimeActions;
+    std::function<void()> launcherFinished;
+    RuntimeCommand command = RuntimeCommand::Idle;
+    bool embedded = false;
+    bool open = true;
+    bool attached = false;
+    bool launchAccepted = false;
+    bool fullscreen = false;
+};
+
+RuntimeWindow::RuntimeWindow(
+    LinuxConfig & config,
+    pj64::input::InputConfig & input,
+    const std::string & frontendConfigPath,
+    const std::string & inputConfigPath) :
+    m_Implementation(std::make_unique<Implementation>(config, input, frontendConfigPath, inputConfigPath))
+{
+}
+
+RuntimeWindow::~RuntimeWindow() = default;
+
+LauncherResult RuntimeWindow::SelectRom(volatile std::sig_atomic_t * stopSignal)
+{
+    QEventLoop loop;
+    QTimer signalTimer;
+    m_Implementation->launcherFinished = [&loop]() { loop.quit(); };
+    QObject::connect(&signalTimer, &QTimer::timeout, &loop, [&loop, stopSignal]() {
+        if (stopSignal != nullptr && *stopSignal != 0)
+        {
+            loop.quit();
+        }
+    });
+    signalTimer.start(25);
+    loop.exec();
+    m_Implementation->launcherFinished = {};
+    return m_Implementation->launchAccepted && (stopSignal == nullptr || *stopSignal == 0)
+        ? LauncherResult::Launch
+        : LauncherResult::Quit;
+}
+
+bool RuntimeWindow::AttachRenderWindow(SDL_Window * renderWindow, const std::string & title, int width, int height)
+{
+    m_Implementation->sdlWindow = renderWindow;
+    m_Implementation->window.setWindowTitle(Text(title));
+
+    SDL_SysWMinfo windowInfo;
+    SDL_VERSION(&windowInfo.version);
+    if (SDL_GetWindowWMInfo(renderWindow, &windowInfo) == SDL_TRUE)
+    {
+#if defined(SDL_VIDEO_DRIVER_X11)
+        if (windowInfo.subsystem == SDL_SYSWM_X11 && QGuiApplication::platformName() == "xcb")
+        {
+            m_Implementation->foreignWindow = QWindow::fromWinId(static_cast<WId>(windowInfo.info.x11.window));
+        }
+#endif
+    }
+
+    if (m_Implementation->foreignWindow != nullptr)
+    {
+        m_Implementation->container = QWidget::createWindowContainer(m_Implementation->foreignWindow, &m_Implementation->window);
+        m_Implementation->container->setFocusPolicy(Qt::StrongFocus);
+        m_Implementation->container->setMinimumSize(320, 240);
+        m_Implementation->window.setCentralWidget(m_Implementation->container);
+        m_Implementation->embedded = true;
+        m_Implementation->window.statusBar()->showMessage("Emulation running");
+    }
+    else
+    {
+        auto * message = new QLabel(
+            "The render surface could not be embedded on this display server. "
+            "The game is open in a separate SDL window; controls remain available here.");
+        message->setAlignment(Qt::AlignCenter);
+        message->setWordWrap(true);
+        m_Implementation->window.setCentralWidget(message);
+        SDL_ShowWindow(renderWindow);
+        m_Implementation->window.statusBar()->showMessage("Using a separate render window");
+    }
+
+    m_Implementation->romEdit = nullptr;
+    m_Implementation->openAction->setEnabled(false);
+    m_Implementation->startAction->setEnabled(false);
+    for (QAction * action : m_Implementation->runtimeActions)
+    {
+        action->setEnabled(true);
+    }
+    m_Implementation->attached = true;
+    m_Implementation->window.resize(width, height + m_Implementation->window.menuBar()->sizeHint().height());
+    m_Implementation->window.show();
+    QApplication::processEvents();
+    if (m_Implementation->container != nullptr)
+    {
+        m_Implementation->container->setFocus();
+    }
+    return m_Implementation->embedded;
+}
+
+bool RuntimeWindow::IsEmbedded() const
+{
+    return m_Implementation->embedded;
+}
+
+bool RuntimeWindow::IsOpen() const
+{
+    return m_Implementation->open;
+}
+
+void RuntimeWindow::ProcessEvents()
+{
+    QApplication::processEvents(QEventLoop::AllEvents, 2);
+}
+
+RuntimeCommand RuntimeWindow::TakeCommand()
+{
+    const RuntimeCommand result = m_Implementation->command;
+    m_Implementation->command = RuntimeCommand::Idle;
     return result;
+}
+
+void RuntimeWindow::ToggleFullscreen()
+{
+    if (!m_Implementation->embedded && m_Implementation->sdlWindow != nullptr)
+    {
+        m_Implementation->fullscreen = !m_Implementation->fullscreen;
+        SDL_SetWindowFullscreen(
+            m_Implementation->sdlWindow,
+            m_Implementation->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    }
+    else if (m_Implementation->window.isFullScreen())
+    {
+        m_Implementation->window.showNormal();
+    }
+    else
+    {
+        m_Implementation->window.showFullScreen();
+    }
+}
+
+void RuntimeWindow::SetPaused(bool paused)
+{
+    m_Implementation->pauseAction->setText(paused ? "Resume" : "Pause");
+    SetStatus(paused ? "Emulation paused" : "Emulation running");
+}
+
+void RuntimeWindow::SetSpeedLimited(bool limited)
+{
+    m_Implementation->speedAction->setText(limited ? "Disable Speed Limit" : "Enable Speed Limit");
+}
+
+void RuntimeWindow::SetStatus(const std::string & text)
+{
+    m_Implementation->window.statusBar()->showMessage(Text(text), 4000);
 }

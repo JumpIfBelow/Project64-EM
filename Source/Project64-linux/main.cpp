@@ -1,5 +1,7 @@
 #include <SDL.h>
 
+#include <QApplication>
+
 #include "Launcher.h"
 #include "LinuxConfig.h"
 
@@ -19,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -199,7 +202,7 @@ void PrintUsage(const char * executable)
     std::fprintf(stdout,
         "Usage: %s [--configure] [--fullscreen|--windowed] [--input-config FILE] [ROM]\n"
         "\n"
-        "Without a ROM, the Linux launcher opens. Direct ROM paths skip the launcher.\n"
+        "Without a ROM, the central game panel opens. Direct ROM paths start immediately.\n"
         "Runtime: F2 pause, F5 save, F7 load, F8 reset, F9 speed limit,\n"
         "F11 fullscreen, F12 screenshot, Escape exit.\n",
         executable);
@@ -290,16 +293,6 @@ std::string InputConfigPath(const Options & options, const std::filesystem::path
         : std::filesystem::path(options.inputConfig)).string();
 }
 
-bool SetFullscreen(SDL_Window * window, bool fullscreen)
-{
-    const uint32_t flags = fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
-    if (SDL_SetWindowFullscreen(window, flags) != 0)
-    {
-        std::fprintf(stderr, "Unable to change fullscreen mode: %s\n", SDL_GetError());
-        return false;
-    }
-    return true;
-}
 }
 
 int main(int argc, char ** argv)
@@ -324,6 +317,23 @@ int main(int argc, char ** argv)
         std::fprintf(stderr, "--fullscreen and --windowed cannot be used together\n");
         return EXIT_FAILURE;
     }
+
+    if (std::getenv("DISPLAY") != nullptr)
+    {
+        if (std::getenv("QT_QPA_PLATFORM") == nullptr)
+        {
+            setenv("QT_QPA_PLATFORM", "xcb", 0);
+        }
+        if (std::getenv("SDL_VIDEODRIVER") == nullptr)
+        {
+            setenv("SDL_VIDEODRIVER", "x11", 0);
+        }
+    }
+
+    QApplication application(argc, argv);
+    QApplication::setApplicationName("Project64-EM");
+    QApplication::setOrganizationName("Project64-EM");
+    QApplication::setQuitOnLastWindowClosed(false);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0)
     {
@@ -366,14 +376,34 @@ int main(int argc, char ** argv)
     }
 
     const bool showLauncher = options.showLauncher || options.rom.empty();
-    const uint32_t windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
-        (!showLauncher && config.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    auto frontend = std::make_unique<RuntimeWindow>(config, input, frontendConfigPath, inputConfigPath);
+    if (showLauncher && frontend->SelectRom(&g_SignalReceived) != LauncherResult::Launch)
+    {
+        SDL_Quit();
+        return EXIT_SUCCESS;
+    }
+    options.rom = showLauncher ? config.lastRom : options.rom;
+    if (!std::filesystem::is_regular_file(options.rom))
+    {
+        std::fprintf(stderr, "ROM does not exist or is not a regular file: %s\n", options.rom.c_str());
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+    if (!showLauncher)
+    {
+        config.AddRecentRom(options.rom);
+        config.Save(frontendConfigPath);
+    }
+    config.ApplyEnvironment(inputConfigPath);
+    config.ApplyProjectSettings(baseDirectory);
+
+    const uint32_t windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
     SDL_Window * window = SDL_CreateWindow(
         "Project64-EM",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        showLauncher ? 960 : config.windowWidth,
-        showLauncher ? 700 : config.windowHeight,
+        config.windowWidth,
+        config.windowHeight,
         windowFlags);
     if (window == nullptr)
     {
@@ -391,41 +421,13 @@ int main(int argc, char ** argv)
         return EXIT_FAILURE;
     }
 
-    if (showLauncher && RunLauncher(window, context, config, input, frontendConfigPath, inputConfigPath, &g_SignalReceived) != LauncherResult::Launch)
-    {
-        SDL_GL_DeleteContext(context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return EXIT_SUCCESS;
-    }
-    options.rom = showLauncher ? config.lastRom : options.rom;
-    if (!std::filesystem::is_regular_file(options.rom))
-    {
-        std::fprintf(stderr, "ROM does not exist or is not a regular file: %s\n", options.rom.c_str());
-        SDL_GL_DeleteContext(context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return EXIT_FAILURE;
-    }
-    if (!showLauncher)
-    {
-        config.AddRecentRom(options.rom);
-        config.Save(frontendConfigPath);
-    }
-    config.ApplyEnvironment(inputConfigPath);
-    config.ApplyProjectSettings(baseDirectory);
-
-    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0)
-    {
-        SetFullscreen(window, false);
-    }
-    SDL_SetWindowSize(window, config.windowWidth, config.windowHeight);
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    const std::string title = std::filesystem::path(options.rom).filename().string() + " — Project64-EM";
+    frontend->AttachRenderWindow(window, title, config.windowWidth, config.windowHeight);
+    frontend->SetSpeedLimited(config.limitFps);
     if (config.fullscreen)
     {
-        SetFullscreen(window, true);
+        frontend->ToggleFullscreen();
     }
-    SDL_SetWindowTitle(window, std::filesystem::path(options.rom).filename().string().c_str());
 
     LinuxNotification notification;
     SdlRenderWindow renderWindow(window, context, config.vsync);
@@ -448,11 +450,11 @@ int main(int argc, char ** argv)
         romStarted = CN64System::RunFileImage(options.rom.c_str());
     }
 
-    bool fullscreen = config.fullscreen;
     bool sawRunningCpu = false;
     bool quit = !appInitialized || !romStarted;
     while (!quit)
     {
+        frontend->ProcessEvents();
         if (g_SignalReceived != 0)
         {
             quit = true;
@@ -474,6 +476,7 @@ int main(int argc, char ** argv)
                 {
                     const bool paused = g_Settings->LoadBool(GameRunning_CPU_Paused);
                     g_BaseSystem->ExternalEvent(paused ? SysEvent_ResumeCPU_FromMenu : SysEvent_PauseCPU_FromMenu);
+                    frontend->SetPaused(!paused);
                 }
                 else if (event.key.keysym.sym == SDLK_F5 && g_BaseSystem != nullptr)
                 {
@@ -489,12 +492,13 @@ int main(int argc, char ** argv)
                 }
                 else if (event.key.keysym.sym == SDLK_F9 && g_Settings != nullptr)
                 {
-                    g_Settings->SaveBool(GameRunning_LimitFPS, !g_Settings->LoadBool(GameRunning_LimitFPS));
+                    const bool limited = !g_Settings->LoadBool(GameRunning_LimitFPS);
+                    g_Settings->SaveBool(GameRunning_LimitFPS, limited);
+                    frontend->SetSpeedLimited(limited);
                 }
                 else if (event.key.keysym.sym == SDLK_F11)
                 {
-                    fullscreen = !fullscreen;
-                    SetFullscreen(window, fullscreen);
+                    frontend->ToggleFullscreen();
                 }
                 else if (event.key.keysym.sym == SDLK_F12 && g_Settings != nullptr &&
                     g_Plugins != nullptr && g_Plugins->Gfx() != nullptr && g_Plugins->Gfx()->CaptureScreen != nullptr)
@@ -505,12 +509,79 @@ int main(int argc, char ** argv)
             }
         }
 
+        switch (frontend->TakeCommand())
+        {
+        case RuntimeCommand::PauseResume:
+            if (g_BaseSystem != nullptr)
+            {
+                const bool paused = g_Settings->LoadBool(GameRunning_CPU_Paused);
+                g_BaseSystem->ExternalEvent(paused ? SysEvent_ResumeCPU_FromMenu : SysEvent_PauseCPU_FromMenu);
+                frontend->SetPaused(!paused);
+            }
+            break;
+        case RuntimeCommand::SaveState:
+            if (g_BaseSystem != nullptr) g_BaseSystem->ExternalEvent(SysEvent_SaveMachineState);
+            frontend->SetStatus("Save state requested");
+            break;
+        case RuntimeCommand::LoadState:
+            if (g_BaseSystem != nullptr) g_BaseSystem->ExternalEvent(SysEvent_LoadMachineState);
+            frontend->SetStatus("Load state requested");
+            break;
+        case RuntimeCommand::SoftReset:
+            if (g_BaseSystem != nullptr) g_BaseSystem->ExternalEvent(SysEvent_ResetCPU_Soft);
+            frontend->SetStatus("Soft reset requested");
+            break;
+        case RuntimeCommand::ToggleSpeedLimit:
+            if (g_Settings != nullptr)
+            {
+                const bool limited = !g_Settings->LoadBool(GameRunning_LimitFPS);
+                g_Settings->SaveBool(GameRunning_LimitFPS, limited);
+                frontend->SetSpeedLimited(limited);
+            }
+            break;
+        case RuntimeCommand::ToggleFullscreen:
+            frontend->ToggleFullscreen();
+            break;
+        case RuntimeCommand::Screenshot:
+            if (g_Settings != nullptr && g_Plugins != nullptr && g_Plugins->Gfx() != nullptr &&
+                g_Plugins->Gfx()->CaptureScreen != nullptr)
+            {
+                const std::string screenshotDirectory = g_Settings->LoadStringVal(Directory_SnapShot);
+                g_Plugins->Gfx()->CaptureScreen(screenshotDirectory.c_str());
+                frontend->SetStatus("Screenshot requested");
+            }
+            break;
+        case RuntimeCommand::Settings:
+        {
+            const bool wasPaused = g_Settings != nullptr && g_Settings->LoadBool(GameRunning_CPU_Paused);
+            if (!wasPaused && g_BaseSystem != nullptr)
+            {
+                g_BaseSystem->ExternalEvent(SysEvent_PauseCPU_FromMenu);
+            }
+            if (ShowSettings(config, input, frontendConfigPath, inputConfigPath))
+            {
+                config.ApplyProjectSettings(baseDirectory);
+                frontend->SetSpeedLimited(config.limitFps);
+                frontend->SetStatus("Settings saved; video, audio, and input changes apply after restart");
+            }
+            if (!wasPaused && g_BaseSystem != nullptr)
+            {
+                g_BaseSystem->ExternalEvent(SysEvent_ResumeCPU_FromMenu);
+            }
+            break;
+        }
+        case RuntimeCommand::Quit:
+            quit = true;
+            break;
+        case RuntimeCommand::Idle:
+            break;
+        }
+
         if (notification.TakeFullscreenRequest())
         {
-            fullscreen = !fullscreen;
-            SetFullscreen(window, fullscreen);
+            frontend->ToggleFullscreen();
         }
-        if (notification.StopRequested() || renderWindow.ContextError())
+        if (!frontend->IsOpen() || notification.StopRequested() || renderWindow.ContextError())
         {
             quit = true;
         }
@@ -536,6 +607,7 @@ int main(int argc, char ** argv)
         AppCleanup();
     }
 
+    frontend.reset();
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();

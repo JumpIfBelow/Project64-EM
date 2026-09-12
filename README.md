@@ -4,16 +4,18 @@ Project64-EM is a fork of Project64 used by the OoTMM multiplayer client.
 
 ## Linux
 
-The Linux target provides an SDL2 launcher and playable OpenGL frontend while
-retaining the existing Windows frontend. It supports persistent video, audio,
-keyboard, gamepad and directory settings as well as the OoTMM multiplayer IPC
-transport. The Linux frontend currently uses Project64's interpreter CPU core;
-the Windows dynamic recompiler is not portable yet.
+The Linux target provides a Qt 6 application shell around the SDL2/OpenGL
+emulator while retaining the existing Windows frontend. A central game panel
+starts ROMs, and the persistent top menu remains available while a ROM is
+running. It supports video, audio, keyboard, gamepad and directory settings as
+well as the OoTMM multiplayer IPC transport. The Linux frontend currently uses
+Project64's interpreter CPU core; the Windows dynamic recompiler is not portable
+yet.
 
 Ubuntu build dependencies:
 
 ```sh
-sudo apt install build-essential cmake ninja-build libsdl2-dev libgl1-mesa-dev libssl-dev
+sudo apt install build-essential cmake ninja-build qt6-base-dev libsdl2-dev libgl1-mesa-dev libssl-dev
 ```
 
 Configure and build from the repository root:
@@ -23,8 +25,8 @@ cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux
 ```
 
-The configure step downloads a checksum-pinned Dear ImGui release for the Linux
-launcher. No Linux frontend dependency is added to the Windows target.
+Qt is required only by the Linux target. No Linux frontend dependency is added
+to the Windows target.
 
 Open the launcher:
 
@@ -32,8 +34,8 @@ Open the launcher:
 ./build-linux/bin/project64-em
 ```
 
-Choose a locally generated ROM, adjust settings if needed, and select
-`Launch ROM`. The launcher includes:
+Choose a locally generated ROM in the central panel, adjust settings if needed,
+and select `Start Game`. The application includes:
 
 - window, fullscreen and speed-limit settings;
 - aspect ratio, texture filtering, VSync and texture-pack settings;
@@ -51,9 +53,11 @@ To bypass the launcher, pass a ROM directly:
 `--fullscreen` or `--windowed` overrides the saved mode for a direct launch.
 `--input-config FILE` selects an alternate controller configuration.
 
-During emulation, F2 pauses or resumes, F5 saves state, F7 loads state, F8
-performs a soft reset, F9 toggles the speed limit, F11 toggles fullscreen, F12
-takes a screenshot, and Escape exits.
+The File, System, Options and Help menus remain accessible during emulation.
+They provide settings, save states, reset, pause, screenshots, speed limiting
+and fullscreen controls. F2 pauses or resumes, F5 saves state, F7 loads state,
+F8 performs a soft reset, F9 toggles the speed limit, F11 toggles fullscreen,
+F12 takes a screenshot, and Escape exits.
 
 Frontend and input settings are stored in
 `$XDG_CONFIG_HOME/project64-em`, or `~/.config/project64-em` when
