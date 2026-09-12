@@ -300,6 +300,22 @@ std::string InputConfigPath(const Options & options, const std::filesystem::path
         : std::filesystem::path(options.inputConfig)).string();
 }
 
+bool ConfigureEmbeddedWindowing()
+{
+    const char * display = std::getenv("DISPLAY");
+    if (display == nullptr || display[0] == '\0')
+    {
+        std::fprintf(stderr, "Project64-EM requires X11 or XWayland for its embedded game surface.\n");
+        return false;
+    }
+    if (setenv("QT_QPA_PLATFORM", "xcb", 1) != 0 || setenv("SDL_VIDEODRIVER", "x11", 1) != 0)
+    {
+        std::fprintf(stderr, "Unable to select the shared X11 window backend.\n");
+        return false;
+    }
+    return true;
+}
+
 }
 
 int main(int argc, char ** argv)
@@ -325,16 +341,9 @@ int main(int argc, char ** argv)
         return EXIT_FAILURE;
     }
 
-    if (std::getenv("DISPLAY") != nullptr)
+    if (!ConfigureEmbeddedWindowing())
     {
-        if (std::getenv("QT_QPA_PLATFORM") == nullptr)
-        {
-            setenv("QT_QPA_PLATFORM", "xcb", 0);
-        }
-        if (std::getenv("SDL_VIDEODRIVER") == nullptr)
-        {
-            setenv("SDL_VIDEODRIVER", "x11", 0);
-        }
+        return EXIT_FAILURE;
     }
 
     QApplication application(argc, argv);
@@ -419,17 +428,26 @@ int main(int argc, char ** argv)
         return EXIT_FAILURE;
     }
 
-    SDL_GLContext context = SDL_GL_CreateContext(window);
-    if (context == nullptr)
+    const std::string title = std::filesystem::path(options.rom).filename().string() + " — Project64-EM";
+    if (!frontend->AttachRenderWindow(window, title))
     {
-        std::fprintf(stderr, "Unable to create an OpenGL context: %s\n", SDL_GetError());
+        std::fprintf(stderr,
+            "Unable to embed the game surface. Ensure that Qt's xcb plugin and X11 or XWayland are available.\n");
         SDL_DestroyWindow(window);
         SDL_Quit();
         return EXIT_FAILURE;
     }
 
-    const std::string title = std::filesystem::path(options.rom).filename().string() + " — Project64-EM";
-    frontend->AttachRenderWindow(window, title, config.windowWidth, config.windowHeight);
+    SDL_GLContext context = SDL_GL_CreateContext(window);
+    if (context == nullptr)
+    {
+        std::fprintf(stderr, "Unable to create an OpenGL context: %s\n", SDL_GetError());
+        frontend.reset();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
+
     frontend->SetSpeedLimited(config.limitFps);
     if (config.fullscreen)
     {

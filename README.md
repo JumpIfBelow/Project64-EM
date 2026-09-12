@@ -66,6 +66,11 @@ while preserving the selected aspect ratio. F2 pauses or resumes, F5 saves
 state, F7 loads state, F8 performs a soft reset, F9 toggles the speed limit,
 F11 toggles fullscreen, F12 takes a screenshot, and Escape exits.
 
+The Qt shell and SDL renderer use the same X11 backend so the game surface is
+always embedded in the application window. X11 or XWayland and Qt's xcb platform
+plugin must be available; the Linux frontend does not fall back to a separate
+render window.
+
 Frontend and input settings are stored in
 `$XDG_CONFIG_HOME/project64-em`, or `~/.config/project64-em` when
 `XDG_CONFIG_HOME` is unset. The supplied `Config/LinuxInput.ini` is copied as

@@ -67,8 +67,7 @@ public:
     RuntimeWindow & operator=(const RuntimeWindow &) = delete;
 
     LauncherResult SelectRom(volatile std::sig_atomic_t * stopSignal);
-    bool AttachRenderWindow(SDL_Window * renderWindow, const std::string & title, int width, int height);
-    bool IsEmbedded() const;
+    bool AttachRenderWindow(SDL_Window * renderWindow, const std::string & title);
     bool IsOpen() const;
     void ProcessEvents();
     void GetDrawableSize(uint32_t & width, uint32_t & height) const;

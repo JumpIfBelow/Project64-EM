@@ -975,7 +975,9 @@ struct RuntimeWindow::Implementation
         toolbar->addAction(settingsAction);
 
         BuildHome();
-        window.resize(900, 620);
+        const int chromeHeight = window.menuBar()->sizeHint().height() +
+            toolbar->sizeHint().height() + window.statusBar()->sizeHint().height();
+        window.resize(config.windowWidth, config.windowHeight + chromeHeight);
         window.show();
     }
 
@@ -1128,7 +1130,6 @@ struct RuntimeWindow::Implementation
     pj64::input::InputConfig & input;
     std::string frontendConfigPath;
     std::string inputConfigPath;
-    SDL_Window * sdlWindow = nullptr;
     EmulatorMainWindow window;
     QWindow * foreignWindow = nullptr;
     QWidget * container = nullptr;
@@ -1146,11 +1147,9 @@ struct RuntimeWindow::Implementation
     std::vector<QAction *> runtimeActions;
     std::function<void()> launcherFinished;
     RuntimeCommand command = RuntimeCommand::Idle;
-    bool embedded = false;
     bool open = true;
     bool attached = false;
     bool launchAccepted = false;
-    bool fullscreen = false;
     std::atomic_uint32_t drawableWidth{0};
     std::atomic_uint32_t drawableHeight{0};
 };
@@ -1185,14 +1184,9 @@ LauncherResult RuntimeWindow::SelectRom(volatile std::sig_atomic_t * stopSignal)
         : LauncherResult::Quit;
 }
 
-bool RuntimeWindow::AttachRenderWindow(SDL_Window * renderWindow, const std::string & title, int width, int height)
+bool RuntimeWindow::AttachRenderWindow(SDL_Window * renderWindow, const std::string & title)
 {
-    m_Implementation->sdlWindow = renderWindow;
     m_Implementation->window.setWindowTitle(Text(title));
-    const QWidget * previousCentralWidget = m_Implementation->window.centralWidget();
-    const int chromeHeight = previousCentralWidget != nullptr
-        ? m_Implementation->window.height() - previousCentralWidget->height()
-        : 0;
 
     SDL_SysWMinfo windowInfo;
     SDL_VERSION(&windowInfo.version);
@@ -1206,27 +1200,17 @@ bool RuntimeWindow::AttachRenderWindow(SDL_Window * renderWindow, const std::str
 #endif
     }
 
-    if (m_Implementation->foreignWindow != nullptr)
+    if (m_Implementation->foreignWindow == nullptr)
     {
-        m_Implementation->container = QWidget::createWindowContainer(m_Implementation->foreignWindow, &m_Implementation->window);
-        m_Implementation->container->setFocusPolicy(Qt::StrongFocus);
-        m_Implementation->container->setMinimumSize(320, 240);
-        m_Implementation->window.setCentralWidget(m_Implementation->container);
-        m_Implementation->embedded = true;
-        m_Implementation->window.statusBar()->showMessage("Emulation running");
-    }
-    else
-    {
-        auto * message = new QLabel(
-            "The render surface could not be embedded on this display server. "
-            "The game is open in a separate SDL window; controls remain available here.");
-        message->setAlignment(Qt::AlignCenter);
-        message->setWordWrap(true);
-        m_Implementation->window.setCentralWidget(message);
-        SDL_ShowWindow(renderWindow);
-        m_Implementation->window.statusBar()->showMessage("Using a separate render window");
+        m_Implementation->window.statusBar()->showMessage("Unable to create the embedded render surface");
+        return false;
     }
 
+    m_Implementation->container = QWidget::createWindowContainer(m_Implementation->foreignWindow, &m_Implementation->window);
+    m_Implementation->container->setFocusPolicy(Qt::StrongFocus);
+    m_Implementation->container->setMinimumSize(320, 240);
+    m_Implementation->window.setCentralWidget(m_Implementation->container);
+    m_Implementation->window.statusBar()->showMessage("Emulation running");
     m_Implementation->romEdit = nullptr;
     m_Implementation->openAction->setEnabled(false);
     m_Implementation->startAction->setEnabled(false);
@@ -1237,7 +1221,6 @@ bool RuntimeWindow::AttachRenderWindow(SDL_Window * renderWindow, const std::str
     }
     m_Implementation->systemMenuAction->setVisible(true);
     m_Implementation->attached = true;
-    m_Implementation->window.resize(width, height + chromeHeight);
     m_Implementation->window.show();
     QApplication::processEvents();
     m_Implementation->SynchronizeRenderSize();
@@ -1245,12 +1228,7 @@ bool RuntimeWindow::AttachRenderWindow(SDL_Window * renderWindow, const std::str
     {
         m_Implementation->container->setFocus();
     }
-    return m_Implementation->embedded;
-}
-
-bool RuntimeWindow::IsEmbedded() const
-{
-    return m_Implementation->embedded;
+    return true;
 }
 
 bool RuntimeWindow::IsOpen() const
@@ -1279,14 +1257,7 @@ RuntimeCommand RuntimeWindow::TakeCommand()
 
 void RuntimeWindow::ToggleFullscreen()
 {
-    if (!m_Implementation->embedded && m_Implementation->sdlWindow != nullptr)
-    {
-        m_Implementation->fullscreen = !m_Implementation->fullscreen;
-        SDL_SetWindowFullscreen(
-            m_Implementation->sdlWindow,
-            m_Implementation->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    }
-    else if (m_Implementation->window.isFullScreen())
+    if (m_Implementation->window.isFullScreen())
     {
         m_Implementation->window.showNormal();
     }
@@ -1294,8 +1265,7 @@ void RuntimeWindow::ToggleFullscreen()
     {
         m_Implementation->window.showFullScreen();
     }
-    m_Implementation->fullscreenAction->setChecked(
-        m_Implementation->embedded ? m_Implementation->window.isFullScreen() : m_Implementation->fullscreen);
+    m_Implementation->fullscreenAction->setChecked(m_Implementation->window.isFullScreen());
 }
 
 void RuntimeWindow::SetPaused(bool paused)
