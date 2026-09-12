@@ -163,6 +163,15 @@ public:
         }
     }
 
+    void GetDrawableSize(uint32_t & width, uint32_t & height) const override
+    {
+        int drawableWidth = 0;
+        int drawableHeight = 0;
+        SDL_GL_GetDrawableSize(m_Window, &drawableWidth, &drawableHeight);
+        width = drawableWidth > 0 ? static_cast<uint32_t>(drawableWidth) : 0;
+        height = drawableHeight > 0 ? static_cast<uint32_t>(drawableHeight) : 0;
+    }
+
     bool ContextError() const
     {
         return m_ContextError;

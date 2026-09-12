@@ -137,6 +137,7 @@ extern "C" {
         void(*CheckInterrupts)(void);
 #ifndef _WIN32
         void(CALL *SwapBuffers)(void);
+        void(CALL *GetDrawableSize)(uint32_t * width, uint32_t * height);
 #endif
     } GFX_INFO;
 

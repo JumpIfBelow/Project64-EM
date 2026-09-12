@@ -91,6 +91,23 @@ void ChangeSize()
 #ifdef ANDROID
     g_width = g_ScreenWidth;
     g_height = g_ScreenHeight;
+#elif defined(PJ64_SDL_VIDEO)
+    uint32_t drawableWidth = 0;
+    uint32_t drawableHeight = 0;
+    if (gfx.GetDrawableSize != nullptr)
+    {
+        gfx.GetDrawableSize(&drawableWidth, &drawableHeight);
+    }
+    if (drawableWidth > 0 && drawableHeight > 0)
+    {
+        g_width = drawableWidth;
+        g_height = drawableHeight;
+    }
+    else
+    {
+        g_width = GetScreenResWidth(g_settings->ScreenRes());
+        g_height = GetScreenResHeight(g_settings->ScreenRes());
+    }
 #else
     g_width = ev_fullscreen ? GetFullScreenResWidth(g_settings->FullScreenRes()) : GetScreenResWidth(g_settings->ScreenRes());
     g_height = ev_fullscreen ? GetFullScreenResHeight(g_settings->FullScreenRes()) : GetScreenResHeight(g_settings->ScreenRes());

@@ -86,6 +86,7 @@ private:
 
 #ifndef _WIN32
     static void SwapBuffers(void);
+    static void GetDrawableSize(uint32_t * width, uint32_t * height);
 #endif
     static void CALL DummyDrawScreen(void) {}
     static void CALL DummyMoveScreen(int32_t /*xpos*/, int32_t /*ypos*/) {}
