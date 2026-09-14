@@ -1,6 +1,8 @@
 #include "CriticalSection.h"
 #ifdef _WIN32
 #include <Windows.h>
+#else
+#include <pthread.h>
 #endif
 
 CriticalSection::CriticalSection()
@@ -12,7 +14,8 @@ CriticalSection::CriticalSection()
     m_cs = new pthread_mutex_t;
 
     pthread_mutexattr_t mAttr;
-    pthread_mutexattr_settype(&mAttr, PTHREAD_MUTEX_RECURSIVE_NP);
+    pthread_mutexattr_init(&mAttr);
+    pthread_mutexattr_settype(&mAttr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init((pthread_mutex_t *)m_cs, &mAttr);
     pthread_mutexattr_destroy(&mAttr);
 #endif

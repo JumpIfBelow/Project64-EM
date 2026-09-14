@@ -18,6 +18,7 @@
 #include <errno.h>
 #endif
 #include "Platform.h"
+#include <cstring>
 
 // g_ModuleLogLevel may be nullptr while AppInit() is still in session in path.cpp.
 // The added check to compare to nullptr here is at least a temporary workaround.

@@ -18,7 +18,7 @@ DynLibHandle DynamicLibraryOpen(const char *pccLibraryPath, bool ShowErrors)
     DynLibHandle Lib = (DynLibHandle)LoadLibraryA(pccLibraryPath);
     SetErrorMode(LastErrorMode);
 #else
-    pjutil::DynLibHandle Lib = (pjutil::DynLibHandle)dlopen(pccLibraryPath, RTLD_NOW);
+    DynLibHandle Lib = static_cast<DynLibHandle>(dlopen(pccLibraryPath, RTLD_NOW));
 #endif
     return Lib;
 }
@@ -48,4 +48,3 @@ void * DynamicLibraryGetProc(DynLibHandle Lib, const char * ProcedureName)
     return dlsym(Lib, ProcedureName);
 #endif
 }
-

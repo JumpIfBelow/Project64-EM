@@ -15,10 +15,14 @@ jobs:
       matrix:
         name:
           - win32
+          - linux-x64
         include:
           - name: win32
             os: windows-latest
             cmake_opts: -A Win32
+          - name: linux-x64
+            os: ubuntu-24.04
+            cmake_opts: -G Ninja -DCMAKE_BUILD_TYPE=Release
     runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout
@@ -26,10 +30,31 @@ jobs:
     - name: Setup
       run: |
         mkdir build
-    - name: Build
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
       run: |
-        cmake .. ${{ matrix.cmake_opts }}
-        cmake --build . --config Release
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libsdl2-dev libgl1-mesa-dev libssl-dev qt6-base-dev
+    - name: Build
+      shell: bash
+      run: |
+        {
+          cmake .. ${{ matrix.cmake_opts }}
+          cmake --build . --config Release
+        } 2>&1 | tee build.log
+      working-directory: ./build
+    - name: Report build errors
+      if: failure()
+      shell: bash
+      run: |
+        grep -Ei '(: error |fatal error|cmake error|FAILED:|ninja: error|MSB[0-9]+: error)' build.log |
+          tail -20 |
+          while IFS= read -r line; do
+            line=${line//'%'/'%25'}
+            line=${line//$'\r'/'%0D'}
+            line=${line//$'\n'/'%0A'}
+            echo "::error::$line"
+          done
       working-directory: ./build
     - name: Package
       run: |
@@ -50,6 +75,11 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: win32
+          path: pkg
+      - name: Download linux-x64
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x64
           path: pkg
       - name: Release
         uses: softprops/action-gh-release@v1

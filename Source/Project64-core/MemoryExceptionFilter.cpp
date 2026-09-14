@@ -761,10 +761,16 @@ bool CMipsMemoryVM::FilterArmException(uint32_t MemAddress, mcontext_t & context
 #ifndef _WIN32
 bool CMipsMemoryVM::SetupSegvHandler(void)
 {
+#if defined(__i386__) || defined(__arm__)
     struct sigaction sig_act;
+    memset(&sig_act, 0, sizeof(sig_act));
     sig_act.sa_flags = SA_SIGINFO | SA_RESTART;
     sig_act.sa_sigaction = segv_handler;
+    sigemptyset(&sig_act.sa_mask);
     return sigaction(SIGSEGV, &sig_act, nullptr) == 0;
+#else
+    return true;
+#endif
 }
 
 void CMipsMemoryVM::segv_handler(int signal, siginfo_t *siginfo, void *sigcontext)

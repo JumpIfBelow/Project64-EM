@@ -2,7 +2,8 @@
 #ifdef _WIN32
 #include <Windows.h>
 #else
-#include <math.h>
+#include <cstring>
+#include <ctime>
 #endif
 
 #ifdef _WIN32

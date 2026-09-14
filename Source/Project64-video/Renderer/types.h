@@ -52,6 +52,7 @@ enum gfxLOD_t
     GFX_LOD_LOG2_512 = 0x9,
     GFX_LOD_LOG2_1024 = 0xa,
     GFX_LOD_LOG2_2048 = 0xb,
+    GFX_LOD_LOG2_4096 = 0xc,
 };
 
 enum gfxBuffer_t

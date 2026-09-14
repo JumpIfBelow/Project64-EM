@@ -1,4 +1,6 @@
 #include "Platform.h"
+
+#include <cstdio>
 #include <stdint.h>
 
 #ifndef _WIN32

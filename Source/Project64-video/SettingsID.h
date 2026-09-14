@@ -38,7 +38,5 @@ enum VideoSettings : uint16_t
     Set_Logging_Glitch, Set_Logging_VideoRDP, Set_Logging_TLUT, Set_Logging_PNG, 
     Set_Logging_OGLWrapper, Set_Logging_RDPCommands,
 
-#ifdef _WIN32
     Set_FullScreenRes,
-#endif
 };

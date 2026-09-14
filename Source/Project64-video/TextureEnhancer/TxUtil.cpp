@@ -7,7 +7,7 @@
 
 #include "TxUtil.h"
 #include "TxDbg.h"
-#include <zlib/zlib.h>
+#include <zlib.h>
 #include <malloc.h>
 #include <stdlib.h>
 #include <Project64-video/Renderer/types.h>

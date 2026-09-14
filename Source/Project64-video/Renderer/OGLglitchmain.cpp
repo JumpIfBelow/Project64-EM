@@ -16,11 +16,14 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
+#include <SDL.h>
 #endif // _WIN32
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <math.h>
 #include "glitchmain.h"
 #include <Project64-video/trace.h>
@@ -33,6 +36,69 @@ used only in g_Notify->DisplayError when OpenGL extension loading fails on WGL
 */
 
 #include <Settings/Settings.h>
+
+#ifndef _WIN32
+PFNGLBLENDFUNCSEPARATEEXTPROC glBlendFuncSeparateEXT = nullptr;
+PFNGLFOGCOORDFEXTPROC glFogCoordfEXT = nullptr;
+PFNGLBINDFRAMEBUFFEREXTPROC glBindFramebufferEXT = nullptr;
+PFNGLFRAMEBUFFERTEXTURE2DEXTPROC glFramebufferTexture2DEXT = nullptr;
+PFNGLGENFRAMEBUFFERSEXTPROC glGenFramebuffersEXT = nullptr;
+PFNGLBINDRENDERBUFFEREXTPROC glBindRenderbufferEXT = nullptr;
+PFNGLDELETERENDERBUFFERSEXTPROC glDeleteRenderbuffersEXT = nullptr;
+PFNGLGENRENDERBUFFERSEXTPROC glGenRenderbuffersEXT = nullptr;
+PFNGLRENDERBUFFERSTORAGEEXTPROC glRenderbufferStorageEXT = nullptr;
+PFNGLFRAMEBUFFERRENDERBUFFEREXTPROC glFramebufferRenderbufferEXT = nullptr;
+PFNGLCHECKFRAMEBUFFERSTATUSEXTPROC glCheckFramebufferStatusEXT = nullptr;
+PFNGLDELETEFRAMEBUFFERSEXTPROC glDeleteFramebuffersEXT = nullptr;
+PFNGLCREATESHADEROBJECTARBPROC glCreateShaderObjectARB = nullptr;
+PFNGLSHADERSOURCEARBPROC glShaderSourceARB = nullptr;
+PFNGLCOMPILESHADERARBPROC glCompileShaderARB = nullptr;
+PFNGLCREATEPROGRAMOBJECTARBPROC glCreateProgramObjectARB = nullptr;
+PFNGLATTACHOBJECTARBPROC glAttachObjectARB = nullptr;
+PFNGLLINKPROGRAMARBPROC glLinkProgramARB = nullptr;
+PFNGLUSEPROGRAMOBJECTARBPROC glUseProgramObjectARB = nullptr;
+PFNGLGETUNIFORMLOCATIONARBPROC glGetUniformLocationARB = nullptr;
+PFNGLUNIFORM1IARBPROC glUniform1iARB = nullptr;
+PFNGLUNIFORM4FARBPROC glUniform4fARB = nullptr;
+PFNGLUNIFORM1FARBPROC glUniform1fARB = nullptr;
+PFNGLGETINFOLOGARBPROC glGetInfoLogARB = nullptr;
+PFNGLGETOBJECTPARAMETERIVARBPROC glGetObjectParameterivARB = nullptr;
+PFNGLSECONDARYCOLOR3FPROC glSecondaryColor3f = nullptr;
+PFNGLCOMPRESSEDTEXIMAGE2DARBPROC glCompressedTexImage2DARB = nullptr;
+
+static void LoadOpenGLExtensions()
+{
+#define LOAD_GL_EXTENSION(name) name = reinterpret_cast<decltype(name)>(SDL_GL_GetProcAddress(#name))
+    LOAD_GL_EXTENSION(glBlendFuncSeparateEXT);
+    LOAD_GL_EXTENSION(glFogCoordfEXT);
+    LOAD_GL_EXTENSION(glBindFramebufferEXT);
+    LOAD_GL_EXTENSION(glFramebufferTexture2DEXT);
+    LOAD_GL_EXTENSION(glGenFramebuffersEXT);
+    LOAD_GL_EXTENSION(glBindRenderbufferEXT);
+    LOAD_GL_EXTENSION(glDeleteRenderbuffersEXT);
+    LOAD_GL_EXTENSION(glGenRenderbuffersEXT);
+    LOAD_GL_EXTENSION(glRenderbufferStorageEXT);
+    LOAD_GL_EXTENSION(glFramebufferRenderbufferEXT);
+    LOAD_GL_EXTENSION(glCheckFramebufferStatusEXT);
+    LOAD_GL_EXTENSION(glDeleteFramebuffersEXT);
+    LOAD_GL_EXTENSION(glCreateShaderObjectARB);
+    LOAD_GL_EXTENSION(glShaderSourceARB);
+    LOAD_GL_EXTENSION(glCompileShaderARB);
+    LOAD_GL_EXTENSION(glCreateProgramObjectARB);
+    LOAD_GL_EXTENSION(glAttachObjectARB);
+    LOAD_GL_EXTENSION(glLinkProgramARB);
+    LOAD_GL_EXTENSION(glUseProgramObjectARB);
+    LOAD_GL_EXTENSION(glGetUniformLocationARB);
+    LOAD_GL_EXTENSION(glUniform1iARB);
+    LOAD_GL_EXTENSION(glUniform4fARB);
+    LOAD_GL_EXTENSION(glUniform1fARB);
+    LOAD_GL_EXTENSION(glGetInfoLogARB);
+    LOAD_GL_EXTENSION(glGetObjectParameterivARB);
+    LOAD_GL_EXTENSION(glSecondaryColor3f);
+    LOAD_GL_EXTENSION(glCompressedTexImage2DARB);
+#undef LOAD_GL_EXTENSION
+}
+#endif
 
 int screen_width, screen_height;
 
@@ -322,8 +388,8 @@ struct texbuf_t {
 static texbuf_t texbufs[NB_TEXBUFS];
 static int texbuf_i;
 
-unsigned short frameBuffer[2048 * 2048];
-unsigned short depthBuffer[2048 * 2048];
+std::vector<unsigned short> frameBuffer;
+std::vector<unsigned short> depthBuffer;
 
 void gfxClipWindow(uint32_t minx, uint32_t miny, uint32_t maxx, uint32_t maxy)
 {
@@ -363,6 +429,47 @@ void gfxClipWindow(uint32_t minx, uint32_t miny, uint32_t maxx, uint32_t maxy)
     }
     glEnable(GL_SCISSOR_TEST);
     grDisplayGLError("gfxClipWindow");
+}
+
+void gfxResizeWindow(uint32_t width, uint32_t height)
+{
+    if (width == 0 || height == 0)
+    {
+        return;
+    }
+    screen_width = static_cast<int>(width);
+    screen_height = static_cast<int>(height);
+    g_width = screen_width;
+    g_height = screen_height;
+    widtho = g_width / 2;
+    heighto = g_height / 2;
+
+    if (!use_fbo && nbAuxBuffers == 0)
+    {
+        int texture_width = screen_width;
+        int texture_height = screen_height;
+        if (!npot_support)
+        {
+            texture_width = 1;
+            texture_height = 1;
+            while (texture_width < screen_width) texture_width <<= 1;
+            while (texture_height < screen_height) texture_height <<= 1;
+        }
+
+        GLint bound_texture = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound_texture);
+        glBindTexture(GL_TEXTURE_2D, color_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, texture_width, texture_height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(bound_texture));
+        save_w = 0;
+        save_h = 0;
+    }
+
+    glViewport(0, g_viewport_offset, g_width, g_height);
+    glScissor(0, g_viewport_offset, g_width, g_height);
+    viewport_width = g_width;
+    viewport_height = g_height;
+    nvidia_viewport_hack = 1;
 }
 
 void gfxColorMask(bool rgb, bool a)
@@ -461,18 +568,27 @@ bool gfxSstWinOpen(gfxColorFormat_t color_format, gfxOriginLocation_t origin_loc
     pfd.cAuxBuffers = 1;
 
     int pfm;
-#else
-    fputs("ERROR: No GLX yet to start GL on [Free]BSD, Linux etc.\n", stderr);
 #endif // _WIN32
 
     WriteTrace(TraceGlitch, TraceDebug, "color_format: %d, origin_location: %d, nColBuffers: %d, nAuxBuffers: %d", color_format, origin_location, nColBuffers, nAuxBuffers);
 
-#ifdef _WIN32
-    TMU_SIZE = ((g_settings->wrpVRAM() * 1024 * 1024) - g_width * g_height * 4 * 3) / 2;
+#if defined(PJ64_SDL_VIDEO)
+    constexpr uint64_t textureBufferBytes = 2ULL * 4096 * 4096 * 2;
+    constexpr uint64_t textureCacheBytes = 64ULL * 1024 * 1024;
+    const uint64_t screenBufferBytes = static_cast<uint64_t>(g_width) * g_height * 4 * 3;
+    const int requiredVRAM = static_cast<int>(
+        (screenBufferBytes + textureBufferBytes + textureCacheBytes + 1024 * 1024 - 1) / (1024 * 1024));
+    const int wrapperVRAM = maxval(g_settings->wrpVRAM(), requiredVRAM);
+#else
+    const int wrapperVRAM = g_settings->wrpVRAM();
+#endif
+    TMU_SIZE = ((wrapperVRAM * 1024 * 1024) - g_width * g_height * 4 * 3) / 2;
 
     // Save screen resolution for hwfbe (hardware framebuffer emulation?), after resolution enumeration
     screen_width = g_width;
     screen_height = g_height;
+
+#ifdef _WIN32
 
     if ((HWND)gfx.hWnd != nullptr)
     {
@@ -519,6 +635,9 @@ bool gfxSstWinOpen(gfxColorFormat_t color_format, gfxOriginLocation_t origin_loc
         }
     }
 #endif // _WIN32
+#ifndef _WIN32
+    LoadOpenGLExtensions();
+#endif
     lfb_color_fmt = color_format;
     if (origin_location != GFX_ORIGIN_UPPER_LEFT) WriteTrace(TraceGlitch, TraceWarning, "Origin must be in upper left corner");
     if (nColBuffers != 2) WriteTrace(TraceGlitch, TraceWarning, "Number of color buffer is not 2");
@@ -1464,6 +1583,10 @@ void gfxBufferSwap(uint32_t swap_interval)
 #ifdef _WIN32
     SwapBuffers(wglGetCurrentDC());
 #else // _WIN32
+    if (gfx.SwapBuffers != nullptr)
+    {
+        gfx.SwapBuffers();
+    }
 #endif // _WIN32
     for (i = 0; i < nb_fb; i++)
         fbs[i].buff_clear = 1;
@@ -1500,16 +1623,18 @@ bool gfxLfbLock(gfxLock_t type, gfxBuffer_t buffer, gfxLfbWriteMode_t writeMode,
         {
             if (writeMode == GFX_LFBWRITEMODE_888) {
                 //printf("LfbLock GFX_LFBWRITEMODE_888\n");
-                info->lfbPtr = frameBuffer;
+                frameBuffer.resize(static_cast<size_t>(g_width) * g_height * 2);
+                info->lfbPtr = frameBuffer.data();
                 info->strideInBytes = g_width * 4;
                 info->writeMode = GFX_LFBWRITEMODE_888;
                 info->origin = origin;
-                glReadPixels(0, g_viewport_offset, g_width, g_height, GL_BGRA, GL_UNSIGNED_BYTE, frameBuffer);
+                glReadPixels(0, g_viewport_offset, g_width, g_height, GL_BGRA, GL_UNSIGNED_BYTE, frameBuffer.data());
             }
             else {
                 buf = (unsigned char*)malloc(g_width*g_height * 4);
 
-                info->lfbPtr = frameBuffer;
+                frameBuffer.resize(static_cast<size_t>(g_width) * g_height);
+                info->lfbPtr = frameBuffer.data();
                 info->strideInBytes = g_width * 2;
                 info->writeMode = GFX_LFBWRITEMODE_565;
                 info->origin = origin;
@@ -1519,7 +1644,7 @@ bool gfxLfbLock(gfxLock_t type, gfxBuffer_t buffer, gfxLfbWriteMode_t writeMode,
                 {
                     for (i = 0; i < g_width; i++)
                     {
-                        frameBuffer[(g_height - j - 1)*g_width + i] =
+                        frameBuffer[static_cast<size_t>(g_height - j - 1) * g_width + i] =
                             ((buf[j*g_width * 4 + i * 4 + 0] >> 3) << 11) |
                             ((buf[j*g_width * 4 + i * 4 + 1] >> 2) << 5) |
                             (buf[j*g_width * 4 + i * 4 + 2] >> 3);
@@ -1530,11 +1655,12 @@ bool gfxLfbLock(gfxLock_t type, gfxBuffer_t buffer, gfxLfbWriteMode_t writeMode,
         }
         else
         {
-            info->lfbPtr = depthBuffer;
+            depthBuffer.resize(static_cast<size_t>(g_width) * g_height);
+            info->lfbPtr = depthBuffer.data();
             info->strideInBytes = g_width * 2;
             info->writeMode = GFX_LFBWRITEMODE_ZA16;
             info->origin = origin;
-            glReadPixels(0, g_viewport_offset, g_width, g_height, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer);
+            glReadPixels(0, g_viewport_offset, g_width, g_height, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer.data());
         }
     }
 
@@ -1595,19 +1721,18 @@ bool gfxLfbReadRegion(gfxBuffer_t src_buffer, uint32_t src_x, uint32_t src_y, ui
     }
     else
     {
-        buf = (unsigned char*)malloc(src_width*src_height * 2);
-
-        glReadPixels(src_x, (g_viewport_offset)+g_height - src_y - src_height, src_width, src_height, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer);
+        depthBuffer.resize(static_cast<size_t>(src_width) * src_height);
+        glReadPixels(src_x, (g_viewport_offset)+g_height - src_y - src_height, src_width, src_height,
+            GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, depthBuffer.data());
 
         for (j = 0; j < src_height; j++)
         {
             for (i = 0; i < src_width; i++)
             {
                 TargetDepthBuffer[j*(dst_stride / 2) + i] =
-                    ((unsigned short*)buf)[(src_height - j - 1)*src_width * 4 + i * 4];
+                    depthBuffer[static_cast<size_t>(src_height - j - 1) * src_width + i];
             }
         }
-        free(buf);
     }
 
     grDisplayGLError("gfxLfbReadRegion");

@@ -50,6 +50,11 @@ int ev_fullscreen = 0;
 extern int g_viewport_offset;
 extern int g_width, g_height;
 
+#if defined(PJ64_SDL_VIDEO)
+uint32_t g_LastDrawableWidth = 0;
+uint32_t g_LastDrawableHeight = 0;
+#endif
+
 #ifdef _WIN32
 HINSTANCE hinstDLL = nullptr;
 #endif
@@ -91,6 +96,30 @@ void ChangeSize()
 #ifdef ANDROID
     g_width = g_ScreenWidth;
     g_height = g_ScreenHeight;
+#elif defined(PJ64_SDL_VIDEO)
+    uint32_t drawableWidth = 0;
+    uint32_t drawableHeight = 0;
+    if (gfx.GetDrawableSize != nullptr)
+    {
+        gfx.GetDrawableSize(&drawableWidth, &drawableHeight);
+    }
+    if (drawableWidth > 0 && drawableHeight > 0)
+    {
+        g_width = drawableWidth;
+        g_height = drawableHeight;
+        if (GfxInitDone &&
+            (drawableWidth != g_LastDrawableWidth || drawableHeight != g_LastDrawableHeight))
+        {
+            gfxResizeWindow(drawableWidth, drawableHeight);
+        }
+        g_LastDrawableWidth = drawableWidth;
+        g_LastDrawableHeight = drawableHeight;
+    }
+    else
+    {
+        g_width = GetScreenResWidth(g_settings->ScreenRes());
+        g_height = GetScreenResHeight(g_settings->ScreenRes());
+    }
 #else
     g_width = ev_fullscreen ? GetFullScreenResWidth(g_settings->FullScreenRes()) : GetScreenResWidth(g_settings->ScreenRes());
     g_height = ev_fullscreen ? GetFullScreenResHeight(g_settings->FullScreenRes()) : GetScreenResHeight(g_settings->ScreenRes());
@@ -211,26 +240,18 @@ int GetTexAddrNonUMA(int tmu, int texsize)
 void guLoadTextures()
 {
     int tbuf_size = 0;
-    if (g_scr_res_x <= 1024)
-    {
-        gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], GFX_LOD_LOG2_1024, GFX_LOD_LOG2_1024,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
-        tbuf_size = gfxTexCalcMemRequired(GFX_LOD_LOG2_1024, GFX_LOD_LOG2_1024,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565);
-        gfxRenderBuffer(GFX_BUFFER_TEXTUREBUFFER_EXT);
-        gfxBufferClear(0, 0, 0xFFFF);
-        gfxRenderBuffer(GFX_BUFFER_BACKBUFFER);
-    }
-    else
-    {
-        gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], GFX_LOD_LOG2_2048, GFX_LOD_LOG2_2048,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
-        tbuf_size = gfxTexCalcMemRequired(GFX_LOD_LOG2_2048, GFX_LOD_LOG2_2048,
-            GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565);
-        gfxRenderBuffer(GFX_BUFFER_TEXTUREBUFFER_EXT);
-        gfxBufferClear(0, 0, 0xFFFF);
-        gfxRenderBuffer(GFX_BUFFER_BACKBUFFER);
-    }
+#if defined(PJ64_SDL_VIDEO)
+    const gfxLOD_t textureBufferLod = GFX_LOD_LOG2_4096;
+#else
+    const gfxLOD_t textureBufferLod = g_scr_res_x > 1024 ? GFX_LOD_LOG2_2048 : GFX_LOD_LOG2_1024;
+#endif
+    gfxTextureBufferExt(GFX_TMU0, voodoo.tex_min_addr[GFX_TMU0], textureBufferLod, textureBufferLod,
+        GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565, GFX_MIPMAPLEVELMASK_BOTH);
+    tbuf_size = gfxTexCalcMemRequired(textureBufferLod, textureBufferLod,
+        GFX_ASPECT_LOG2_1x1, GFX_TEXFMT_RGB_565);
+    gfxRenderBuffer(GFX_BUFFER_TEXTUREBUFFER_EXT);
+    gfxBufferClear(0, 0, 0xFFFF);
+    gfxRenderBuffer(GFX_BUFFER_BACKBUFFER);
 
     rdp.texbufs[0].tmu = GFX_TMU0;
     rdp.texbufs[0].begin = voodoo.tex_min_addr[GFX_TMU0];
@@ -433,7 +454,7 @@ int InitGfx()
     WriteTrace(TraceGlide64, TraceDebug, "-");
 
     ChangeSize();
-#ifndef ANDROID
+#ifdef _WIN32
     SetWindowDisplaySize((HWND)gfx.hWnd);
 #endif
     if (!gfxSstWinOpen(GFX_COLORFORMAT_RGBA, GFX_ORIGIN_UPPER_LEFT, 2, 1))

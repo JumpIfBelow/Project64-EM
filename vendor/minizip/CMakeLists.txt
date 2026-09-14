@@ -23,6 +23,8 @@ ExternalProject_Add(
     "-DMZ_LZMA=OFF"
     "-DMZ_ZSTD=OFF"
     "-DMZ_FETCH_LIBS=OFF"
+  BUILD_BYPRODUCTS
+    "${MINIZIP_IMPORTED_LOCATION}"
 )
 add_dependencies(ep_minizip ZLIB::ZLIB)
 
@@ -35,3 +37,8 @@ set_target_properties(
   IMPORTED_LOCATION               "${MINIZIP_IMPORTED_LOCATION}"
 )
 add_dependencies(MiniZip::MiniZip ep_minizip)
+
+if(NOT WIN32)
+  find_package(OpenSSL REQUIRED)
+  target_link_libraries(MiniZip::MiniZip INTERFACE ZLIB::ZLIB OpenSSL::Crypto)
+endif()

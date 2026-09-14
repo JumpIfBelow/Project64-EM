@@ -1,5 +1,11 @@
-add_definitions(-DUNICODE=1 -D_UNICODE=1)
+if(WIN32)
+  add_definitions(-DUNICODE=1 -D_UNICODE=1)
+endif()
 
 file(GLOB_RECURSE SOURCES "*.cpp" "*.h")
 include_directories("${CMAKE_SOURCE_DIR}/Source/3rdParty" "${CMAKE_SOURCE_DIR}/Source")
 add_library(Common STATIC ${SOURCES})
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+  target_link_libraries(Common PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+endif()

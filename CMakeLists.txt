@@ -13,13 +13,23 @@ set(VERSION_PJ "${VERSION_PJ_MAJOR}.${VERSION_PJ_MINOR}.${VERSION_PJ_PATCH}")
 set(VERSION_FULL "${VERSION}-PJ-${VERSION_PJ}")
 
 project(Project64-EM VERSION "${VERSION}")
+include(CTest)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(PJ64_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 make_directory("${PJ64_DIRECTORY}")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd5208")
-add_definitions(-D_CRT_SECURE_NO_WARNINGS=1)
-add_definitions(-DWIN32_LEAN_AND_MEAN=1)
+if(MSVC)
+  add_compile_options(/wd5208)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS=1 WIN32_LEAN_AND_MEAN=1)
+else()
+  add_compile_definitions(NO_ASM=1)
+endif()
 
 add_subdirectory(vendor)
 add_subdirectory(Source)

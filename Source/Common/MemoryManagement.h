@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 enum MEM_PROTECTION
 {
     MEM_NOACCESS,

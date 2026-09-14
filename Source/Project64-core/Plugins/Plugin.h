@@ -108,6 +108,7 @@ __interface RenderWindow
     virtual void GfxThreadInit() = 0;
     virtual void GfxThreadDone() = 0;
     virtual void SwapWindow() = 0;
+    virtual void GetDrawableSize(uint32_t & width, uint32_t & height) const = 0;
 #endif
 };
 

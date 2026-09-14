@@ -14,7 +14,7 @@
 
 #include "TxCache.h"
 #include "TxDbg.h"
-#include <zlib/zlib.h>
+#include <zlib.h>
 #include <Common/path.h>
 #include <Common/StdString.h>
 #include <Project64-video/Renderer/types.h>

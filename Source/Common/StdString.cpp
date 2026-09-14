@@ -1,6 +1,8 @@
 #include "StdString.h"
+#include "Platform.h"
 #include <malloc.h>
 #include <algorithm>
+#include <cstring>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
